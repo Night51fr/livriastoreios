@@ -75,9 +75,9 @@ public struct VipleLiveAuthView: View {
         }
         .onChange(of: store.pendingAppleOnboardingUserId) { _, newValue in
             if newValue != nil {
-                appleFirstName = store.pendingAppleFirstName
-                appleLastName = store.pendingAppleLastName
-                let suggestedDisplay = "\(store.pendingAppleFirstName) \(store.pendingAppleLastName)".trimmingCharacters(in: .whitespaces)
+                appleFirstName = store.pendingAppleSuggestedFirstName
+                appleLastName = store.pendingAppleSuggestedLastName
+                let suggestedDisplay = "\(store.pendingAppleSuggestedFirstName) \(store.pendingAppleSuggestedLastName)".trimmingCharacters(in: .whitespaces)
                 appleDisplayName = suggestedDisplay
                 if appleViplemailUser.isEmpty, !suggestedDisplay.isEmpty {
                     let clean = suggestedDisplay
@@ -713,10 +713,10 @@ public struct VipleLiveAuthView: View {
             Task {
                 await store.handleSignInWithApple(
                     appleUserId: appleUserId,
+                    identityToken: tokenString,
                     email: email,
                     firstName: givenName,
-                    lastName: familyName,
-                    identityToken: tokenString
+                    lastName: familyName
                 )
                 if store.isAuthenticated && store.pendingAppleOnboardingUserId == nil {
                     dismiss()
@@ -750,7 +750,7 @@ public struct VipleLiveAuthView: View {
                 firstName: cleanFirst,
                 lastName: cleanLast,
                 displayName: cleanDisplay,
-                viplemailUser: cleanUser
+                vipleMailUser: cleanUser
             )
             if store.isAuthenticated && store.pendingAppleOnboardingUserId == nil {
                 dismiss()
