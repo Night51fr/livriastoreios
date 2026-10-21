@@ -702,12 +702,6 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
-    public func refreshPaymentSettings() async {
-        if let latest = try? await LivriaAPIClient.shared.fetchPaymentSettings() {
-            self.paymentSettings = latest
-        }
-    }
-
     public func searchMembers(query: String) async {
         await performMemberSearch(query: query)
     }

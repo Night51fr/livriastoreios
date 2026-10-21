@@ -117,7 +117,6 @@ public struct LivriaStoreAccountHubView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
     @State private var showingISBNScanner: Bool = false
     @State private var scannedBookDestination: LivriaBook? = nil
-    @State private var showingDeleteAccountConfirmation: Bool = false
 
     public init() {}
 
@@ -152,16 +151,6 @@ public struct LivriaStoreAccountHubView: View {
                     scannedBookDestination = foundBook
                 }
                 .environmentObject(store)
-            }
-            .alert("Êtes-vous sûr de vouloir supprimer votre compte Viple Live ID ?", isPresented: $showingDeleteAccountConfirmation) {
-                Button("Annuler", role: .cancel) {}
-                Button("Oui, supprimer définitivement", role: .destructive) {
-                    Task {
-                        _ = await store.deleteVipleAccount()
-                    }
-                }
-            } message: {
-                Text("Êtes-vous sûr de vouloir supprimer définitivement votre compte Viple Live ID ? Cette action est irréversible et entraînera la suppression de votre compte et de vos données.")
             }
         }
     }
@@ -542,55 +531,6 @@ public struct LivriaStoreAccountHubView: View {
                     )
                 }
                 .buttonStyle(.plain)
-
-                if store.isAuthenticated {
-                    Button(role: .destructive) {
-                        store.signOut()
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.red.opacity(0.14))
-                                    .frame(width: 44, height: 44)
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundStyle(.red)
-                            }
-                            Text("Se déconnecter de mon compte")
-                                .font(.system(size: 14.5, weight: .bold, design: .rounded))
-                                .foregroundStyle(.red)
-                            Spacer()
-                        }
-                        .livriaCard(padding: 12)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(role: .destructive) {
-                        showingDeleteAccountConfirmation = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.red.opacity(0.22))
-                                    .frame(width: 44, height: 44)
-                                Image(systemName: "trash.fill")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundStyle(.red)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Supprimer mon compte Viple Live ID")
-                                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.red)
-                                Text("Suppression définitive de votre compte et de vos données")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(LivriaPalette.inkMuted)
-                            }
-                            Spacer()
-                        }
-                        .livriaCard(padding: 12)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
         }
     }
