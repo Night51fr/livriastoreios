@@ -2,7 +2,8 @@ import Foundation
 
 // MARK: - Client Réseau REST Natif « Livria Store » (App Store ID : 6825159743 • iOS 18+ / iOS 26+)
 
-public actor LivriaAPIClient {
+@MainActor
+public final class LivriaAPIClient {
     public static let shared = LivriaAPIClient()
 
     public let baseAPI = "https://livria.store/api/mobile/v1"
