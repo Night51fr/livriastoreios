@@ -654,9 +654,22 @@ public final class LivriaStoreViewModel: ObservableObject {
 
     public func performMemberSearch(query: String) async {
         do {
-            searchedMembers = try await LivriaAPIClient.shared.searchMembers(query: query)
+            let res = try await LivriaAPIClient.shared.searchMembersResponse(query: query)
+            searchedMembers = res.members
+            if let redirectEnabled = res.loobySocialAppStoreRedirectEnabled {
+                paymentSettings.loobySocialAppStoreRedirectEnabled = redirectEnabled
+            }
+            if let appStoreUrl = res.loobySocialAppStoreUrl, !appStoreUrl.isEmpty {
+                paymentSettings.loobySocialAppStoreUrl = appStoreUrl
+            }
         } catch {
             searchedMembers = []
+        }
+    }
+
+    public func refreshPaymentSettings() async {
+        if let latest = try? await LivriaAPIClient.shared.fetchPaymentSettings() {
+            self.paymentSettings = latest
         }
     }
 

@@ -42,15 +42,26 @@ public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
     public var paypalEnabled: Bool
     public var applePayEnabled: Bool
     public var googlePayEnabled: Bool
+    public var loobySocialAppStoreRedirectEnabled: Bool
+    public var loobySocialAppStoreUrl: String
 
-    public init(paypalEnabled: Bool = true, applePayEnabled: Bool = true, googlePayEnabled: Bool = true) {
+    public init(
+        paypalEnabled: Bool = true,
+        applePayEnabled: Bool = true,
+        googlePayEnabled: Bool = true,
+        loobySocialAppStoreRedirectEnabled: Bool = true,
+        loobySocialAppStoreUrl: String = "https://apps.apple.com/fr/search?term=LoobySocial"
+    ) {
         self.paypalEnabled = paypalEnabled
         self.applePayEnabled = applePayEnabled
         self.googlePayEnabled = googlePayEnabled
+        self.loobySocialAppStoreRedirectEnabled = loobySocialAppStoreRedirectEnabled
+        self.loobySocialAppStoreUrl = loobySocialAppStoreUrl
     }
 
     enum CodingKeys: String, CodingKey {
         case paypalEnabled, applePayEnabled, googlePayEnabled
+        case loobySocialAppStoreRedirectEnabled, loobySocialAppStoreUrl
     }
 
     public init(from decoder: Decoder) throws {
@@ -58,6 +69,8 @@ public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
         paypalEnabled = (try? c.decode(Bool.self, forKey: .paypalEnabled)) ?? true
         applePayEnabled = (try? c.decode(Bool.self, forKey: .applePayEnabled)) ?? true
         googlePayEnabled = (try? c.decode(Bool.self, forKey: .googlePayEnabled)) ?? true
+        loobySocialAppStoreRedirectEnabled = (try? c.decode(Bool.self, forKey: .loobySocialAppStoreRedirectEnabled)) ?? true
+        loobySocialAppStoreUrl = (try? c.decode(String.self, forKey: .loobySocialAppStoreUrl)) ?? "https://apps.apple.com/fr/search?term=LoobySocial"
     }
 }
 
@@ -424,6 +437,8 @@ public struct LivriaMemberSearchResult: Codable, Identifiable, Equatable, Sendab
 
 public struct LivriaMemberSearchResponse: Codable, Sendable {
     public var ok: Bool
+    public var loobySocialAppStoreRedirectEnabled: Bool?
+    public var loobySocialAppStoreUrl: String?
     public var members: [LivriaMemberSearchResult]
 }
 

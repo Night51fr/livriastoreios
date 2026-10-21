@@ -33,6 +33,8 @@ public struct BoutiqueView: View {
     @State private var sortOption: SortOption = .popular
     @State private var selectedBook: LivriaBook? = nil
     @State private var showingISBNScanner: Bool = false
+    @State private var showingLoobySocialWaitAlert: Bool = false
+    @State private var pendingWebMemberProfileUrl: String = ""
 
     public init() {}
 
@@ -144,6 +146,18 @@ public struct BoutiqueView: View {
                         await store.searchMembers(query: searchText)
                     }
                 }
+            }
+            .alert("LoobySocial", isPresented: $showingLoobySocialWaitAlert) {
+                if let webUrl = URL(string: pendingWebMemberProfileUrl), !pendingWebMemberProfileUrl.isEmpty {
+                    Button("Consulter sur le site web") {
+                        #if canImport(UIKit)
+                        UIApplication.shared.open(webUrl, options: [:], completionHandler: nil)
+                        #endif
+                    }
+                }
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("LoobySocial devrais arrivé sur l'App Store, en attendant : vous pouvez consulter les profils sur le site web de Livria")
             }
         }
     }
@@ -478,18 +492,27 @@ public struct BoutiqueView: View {
 
     private func openMemberInLivriaSocial(member: LivriaMemberSummary) {
         let encodedName = member.displayName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let appUrl = URL(string: "livriasocial://profile/\(member.id)?name=\(encodedName)") {
-            #if canImport(UIKit)
-            UIApplication.shared.open(appUrl, options: [:]) { opened in
-                if !opened, let fallbackWebUrl = URL(string: member.socialProfileUrl) {
-                    UIApplication.shared.open(fallbackWebUrl, options: [:], completionHandler: nil)
+        guard let appUrl = URL(string: "livriasocial://profile/\(member.id)?name=\(encodedName)") else {
+            return
+        }
+        #if canImport(UIKit)
+        UIApplication.shared.open(appUrl, options: [:]) { opened in
+            if !opened {
+                Task { @MainActor in
+                    await store.refreshPaymentSettings()
+                    if store.paymentSettings.loobySocialAppStoreRedirectEnabled {
+                        let rawStoreUrl = store.paymentSettings.loobySocialAppStoreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let fallbackStoreUrl = rawStoreUrl.isEmpty ? "https://apps.apple.com/fr/search?term=LoobySocial" : rawStoreUrl
+                        if let appStoreUrl = URL(string: fallbackStoreUrl) {
+                            UIApplication.shared.open(appStoreUrl, options: [:], completionHandler: nil)
+                        }
+                    } else {
+                        pendingWebMemberProfileUrl = member.socialProfileUrl
+                        showingLoobySocialWaitAlert = true
+                    }
                 }
             }
-            #endif
-        } else if let fallbackWebUrl = URL(string: member.socialProfileUrl) {
-            #if canImport(UIKit)
-            UIApplication.shared.open(fallbackWebUrl, options: [:], completionHandler: nil)
-            #endif
         }
+        #endif
     }
 }

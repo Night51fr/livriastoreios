@@ -234,13 +234,21 @@ public final class LivriaAPIClient {
         return try await getJSON("/relays/ups", queryItems: items)
     }
 
-    /// Recherche de membres publics (redirigeant vers Livria Social)
-    public func searchMembers(query: String) async throws -> [LivriaMemberSearchResult] {
-        let res: LivriaMemberSearchResponse = try await getJSON(
+    /// Recherche de membres publics (redirigeant vers Livria Social / LoobySocial)
+    public func searchMembersResponse(query: String) async throws -> LivriaMemberSearchResponse {
+        try await getJSON(
             "/members/search",
             queryItems: [URLQueryItem(name: "q", value: query)]
         )
+    }
+
+    public func searchMembers(query: String) async throws -> [LivriaMemberSearchResult] {
+        let res = try await searchMembersResponse(query: query)
         return res.members
+    }
+
+    public func fetchPaymentSettings() async throws -> LivriaPaymentSettings {
+        try await getJSON("/payment-settings")
     }
 
     // MARK: - Paiement Express PayPal / Apple Pay / Google Pay & Activation Compte Post-Commande
