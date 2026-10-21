@@ -80,6 +80,11 @@
 				TargetAttributes = {
 					AA0000060000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
+						SystemCapabilities = {
+							com.apple.SignInWithApple = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -154,6 +159,7 @@
 			buildSettings = {
 				APPLE_APP_STORE_ID = 6825159743;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Livria.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 28;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -186,6 +192,7 @@
 			buildSettings = {
 				APPLE_APP_STORE_ID = 6825159743;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Livria.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 28;
 				GENERATE_INFOPLIST_FILE = NO;
