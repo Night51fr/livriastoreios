@@ -428,6 +428,41 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
+    public func linkAppleToExistingAccount(
+        email: String,
+        password: String
+    ) async {
+        guard let appleId = pendingAppleOnboardingUserId, !appleId.isEmpty else { return }
+        isLoading = true
+        authErrorMessage = nil
+        defer { isLoading = false }
+        do {
+            let res = try await LivriaAPIClient.shared.linkAppleToExistingAccount(
+                appleUserId: appleId,
+                appleEmail: pendingAppleOnboardingEmail,
+                email: email,
+                password: password,
+                guestUserId: currentGuestUserIdForMerge,
+                guestEmail: currentGuestEmailForMerge
+            )
+            guard res.ok, let user = res.user else {
+                authErrorMessage = res.error ?? "Identifiant Viple Live ID ou mot de passe incorrect."
+                return
+            }
+            self.pendingAppleOnboardingUserId = nil
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.removeObject(forKey: savedGuestEmailKey)
+            isShowingAuthSheet = false
+            showToast("Votre compte Viple Live ID (\(user.displayName)) est désormais associé à votre compte Apple !")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            authErrorMessage = error.localizedDescription
+        }
+    }
+
     public func deleteVipleAccount() async {
         guard let u = currentUser, !u.isGuestAccount else { return }
         isLoading = true

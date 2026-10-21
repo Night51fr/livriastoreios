@@ -173,6 +173,26 @@ public final class LivriaAPIClient {
         return try await postJSON("/auth/apple-complete", body: payload)
     }
 
+    /// Sign in with Apple — Étape 2 bis (« J'ai déjà un compte Viple Live ID ») : Associer un compte Viple existant au compte Apple
+    public func linkAppleToExistingAccount(
+        appleUserId: String,
+        appleEmail: String?,
+        email: String,
+        password: String,
+        guestUserId: Int? = nil,
+        guestEmail: String? = nil
+    ) async throws -> LivriaAuthResponse {
+        var payload: [String: Any] = [
+            "appleUserId": appleUserId,
+            "appleEmail": appleEmail ?? "",
+            "email": email,
+            "password": password
+        ]
+        if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
+        if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
+        return try await postJSON("/auth/apple-link-existing", body: payload)
+    }
+
     /// Suppression définitive du compte Viple Live ID
     public func deleteVipleAccount(userId: Int?, email: String?, cid: String?) async throws -> [String: Any] {
         var payload: [String: Any] = [:]
