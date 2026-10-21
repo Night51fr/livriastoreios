@@ -39,6 +39,9 @@ public struct MainTabView: View {
                 }
             }
         }
+        .onOpenURL { url in
+            store.handleIncomingURL(url)
+        }
     }
 
     private var mainAppContent: some View {

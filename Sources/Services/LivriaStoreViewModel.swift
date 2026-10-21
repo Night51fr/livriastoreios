@@ -16,6 +16,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var isShowingTermsReviewSheet: Bool = false
     @Published public var isShowingISBNScannerSheet: Bool = false
     @Published public var scannedBookForDetail: LivriaBook? = nil
+    @Published public var pendingDeepLinkedBookId: Int? = nil
     @Published public var activeToastMessage: String? = nil
     @Published public var isInitialBootstrapping: Bool = true
     @Published public var isLoading: Bool = false
@@ -665,6 +666,11 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.homeData = boot.home
             self.books = boot.books
             self.genres = boot.genres
+            if let pendingId = self.pendingDeepLinkedBookId,
+               let targetBook = boot.books.first(where: { $0.id == pendingId }) {
+                self.pendingDeepLinkedBookId = nil
+                self.scannedBookForDetail = targetBook
+            }
             self.cart = boot.cart
             self.orders = boot.orders
             self.trades = boot.trades
@@ -1262,6 +1268,46 @@ public final class LivriaStoreViewModel: ObservableObject {
             await refreshBootstrap()
         } catch {
             showToast(error.localizedDescription)
+        }
+    }
+
+    // MARK: - 11. Ouverture Directe d'un Livre depuis Livria Social (livriastore://book/{id})
+
+    public func handleIncomingURL(_ url: URL) {
+        let scheme = url.scheme?.lowercased() ?? ""
+        guard scheme == "livriastore" || scheme == "https" || scheme == "http" else { return }
+
+        let host = url.host?.lowercased() ?? ""
+        let pathParts = url.pathComponents.filter { $0 != "/" }
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        var extractedBookId: Int? = nil
+        if (host == "book" || host == "livre" || host == "books"),
+           let first = pathParts.first,
+           let id = Int(first) {
+            extractedBookId = id
+        } else if let idx = pathParts.firstIndex(where: {
+            let p = $0.lowercased()
+            return p == "book" || p == "livre" || p == "books"
+        }), pathParts.count > idx + 1, let id = Int(pathParts[idx + 1]) {
+            extractedBookId = id
+        } else if let idStr = queryItems.first(where: { $0.name == "id" || $0.name == "bookId" })?.value,
+                  let id = Int(idStr) {
+            extractedBookId = id
+        } else if scheme == "livriastore", let id = Int(host) {
+            extractedBookId = id
+        }
+
+        guard let bookId = extractedBookId, bookId > 0 else { return }
+
+        if let found = books.first(where: { $0.id == bookId }) {
+            pendingDeepLinkedBookId = nil
+            scannedBookForDetail = found
+        } else {
+            pendingDeepLinkedBookId = bookId
+            Task {
+                await refreshBootstrap()
+            }
         }
     }
 }
