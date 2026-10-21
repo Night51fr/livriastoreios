@@ -472,6 +472,10 @@ public struct LivriaPayPalCreateResponse: Codable, Sendable {
     public var approveUrl: String?
     public var walletSource: String?
     public var error: String?
+
+    public var payPalOrderId: String? {
+        orderId
+    }
 }
 
 public struct LivriaFinalizeAccountResponse: Codable, Sendable {
@@ -624,7 +628,17 @@ public struct LivriaUpsSearchResponse: Codable, Sendable {
     public var resolvedCity: String?
     public var centerLatitude: Double?
     public var centerLongitude: Double?
+    public var searchCenterLat: Double?
+    public var searchCenterLon: Double?
     public var points: [LivriaUpsPickupPoint]
+
+    public var effectiveCenterLat: Double? {
+        searchCenterLat ?? centerLatitude
+    }
+
+    public var effectiveCenterLon: Double? {
+        searchCenterLon ?? centerLongitude
+    }
 }
 
 // MARK: - Jeux Littéraires XP (Conformes Sendable pour Swift 6 Strict Concurrency)

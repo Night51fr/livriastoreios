@@ -190,8 +190,8 @@ public struct RelayPointsView: View {
             resolvedAreaLabel = cityLabel.isEmpty ? q : cityLabel
             updateMapRegion(
                 points: response.points,
-                centerLat: response.searchCenterLat,
-                centerLon: response.searchCenterLon
+                centerLat: response.effectiveCenterLat,
+                centerLon: response.effectiveCenterLon
             )
         }
     }
@@ -214,8 +214,8 @@ public struct RelayPointsView: View {
             }
             updateMapRegion(
                 points: response.points,
-                centerLat: response.searchCenterLat ?? lat,
-                centerLon: response.searchCenterLon ?? lon
+                centerLat: response.effectiveCenterLat ?? lat,
+                centerLon: response.effectiveCenterLon ?? lon
             )
         }
     }
@@ -230,7 +230,9 @@ public struct RelayPointsView: View {
                     )
                 )
             }
-        } else if let first = points.first, let lat = first.latitude, let lon = first.longitude {
+        } else if let first = points.first, first.latitude != 0, first.longitude != 0 {
+            let lat = first.latitude
+            let lon = first.longitude
             withAnimation(.easeInOut(duration: 0.45)) {
                 mapCameraPosition = .region(
                     MKCoordinateRegion(
@@ -380,8 +382,8 @@ public struct RelayPointsView: View {
                     }
 
                     ForEach(upsResults) { pt in
-                        if let lat = pt.latitude, let lon = pt.longitude {
-                            Annotation(pt.name, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon)) {
+                        if pt.latitude != 0 && pt.longitude != 0 {
+                            Annotation(pt.name, coordinate: CLLocationCoordinate2D(latitude: pt.latitude, longitude: pt.longitude)) {
                                 Button {
                                     selectedPointOnMap = pt
                                 } label: {
@@ -512,8 +514,8 @@ public struct RelayPointsView: View {
 
                             Spacer()
 
-                            if let lat = ups.latitude, let lon = ups.longitude,
-                               let mapsUrl = URL(string: "http://maps.apple.com/?ll=\(lat),\(lon)&q=\(ups.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "UPS")") {
+                            if ups.latitude != 0 && ups.longitude != 0,
+                               let mapsUrl = URL(string: "http://maps.apple.com/?ll=\(ups.latitude),\(ups.longitude)&q=\(ups.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "UPS")") {
                                 Link(destination: mapsUrl) {
                                     Label("Itinéraire", systemImage: "location.north.line.fill")
                                         .font(.system(size: 12, weight: .bold))
