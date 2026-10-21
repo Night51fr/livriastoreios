@@ -174,7 +174,7 @@ public struct HomeView: View {
         .shadow(color: LivriaPalette.primary.opacity(0.28), radius: 14, x: 0, y: 6)
     }
 
-    // MARK: - Grille d'Accès Rapide Livria Store (Boutique, Troc, Scanner ISBN, Looby+, Commandes, Relais, Jeux, Assistance)
+    // MARK: - Grille d'Accès Rapide Livria Store (Boutique, Troc, Scanner ISBN, Looby+, Commandes, Relais, Profil, Assistance)
 
     private var quickModulesGrid: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -209,9 +209,9 @@ public struct HomeView: View {
                     quickModuleLabel(title: "Relais & UPS", icon: "mappin.and.ellipse", color: .orange)
                 }
                 NavigationLink {
-                    GamesHubView()
+                    ProfileView()
                 } label: {
-                    quickModuleLabel(title: "Jeux XP", icon: "gamecontroller.fill", color: .pink)
+                    quickModuleLabel(title: "Mon Profil", icon: "person.crop.circle.fill", color: .indigo)
                 }
                 NavigationLink {
                     SupportAssistanceView()

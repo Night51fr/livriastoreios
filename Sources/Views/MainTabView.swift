@@ -78,7 +78,7 @@ public struct MainTabView: View {
     }
 }
 
-// MARK: - Hub Compte & Services de Livria Store (Commandes UPS, Points Relais, Jeux XP, Assistance Viple, Profil Viple Live ID)
+// MARK: - Hub Compte & Services de Livria Store (Commandes UPS, Points Relais, Assistance Viple, Profil Viple Live ID)
 
 public struct LivriaStoreAccountHubView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
@@ -107,15 +107,6 @@ public struct LivriaStoreAccountHubView: View {
                         color: .orange
                     ) {
                         RelayPointsView()
-                    }
-
-                    hubSectionLink(
-                        title: "Jeux Littéraires & Roue de la Fortune",
-                        subtitle: "Quiz culturel, Mot Mystère, série quotidienne et Roue de la Fortune XP & Fidélité",
-                        icon: "gamecontroller.fill",
-                        color: LivriaPalette.coral
-                    ) {
-                        GamesHubView()
                     }
 
                     hubSectionLink(
