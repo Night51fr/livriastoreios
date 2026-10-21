@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Assistance VipleAPI Synchronisée avec assistance.viplenetwork.com (SupportAssistanceView)
+// MARK: - Service Client & Assistance Livria Store (SupportAssistanceView)
 
 public struct SupportAssistanceView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
@@ -9,13 +9,13 @@ public struct SupportAssistanceView: View {
     @State private var activeTicket: LivriaSupportTicket? = nil
 
     @State private var newSubject: String = ""
-    @State private var newCategory: String = "Commande & Livraison UPS"
+    @State private var newCategory: String = "Commande & Livraison"
     @State private var newBody: String = ""
 
     private let categories = [
-        "Commande & Livraison UPS",
+        "Commande & Livraison",
         "Abonnement Looby+",
-        "Compte Viple Live ID",
+        "Mon Compte",
         "Boutique & Catalogue",
         "Troc & Points Relais",
         "Autre demande"
@@ -29,14 +29,14 @@ public struct SupportAssistanceView: View {
                 vipleAssistanceSyncHeader
 
                 HStack {
-                    Text("Mes Tickets d'Assistance (\(store.supportTickets.count))")
+                    Text("Mes Demandes d'Assistance (\(store.supportTickets.count))")
                         .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundStyle(LivriaPalette.ink)
                     Spacer()
                     Button {
                         showingCreateTicketSheet = true
                     } label: {
-                        Label("Nouveau Ticket", systemImage: "plus.bubble.fill")
+                        Label("Nous contacter", systemImage: "plus.bubble.fill")
                             .font(.system(size: 13, weight: .bold))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
@@ -50,9 +50,9 @@ public struct SupportAssistanceView: View {
                         Image(systemName: "lifepreserver.fill")
                             .font(.system(size: 46))
                             .foregroundStyle(LivriaPalette.primary)
-                        Text("Aucun ticket d'assistance ouvert")
+                        Text("Aucune demande en cours")
                             .font(.system(size: 16, weight: .bold))
-                        Text("Besoin d'aide sur une commande UPS, un abonnement Looby+ ou votre compte Viple Live ID ? Ouvrez un ticket : il sera synchronisé en temps réel avec assistance.viplenetwork.com.")
+                        Text("Besoin d'aide concernant une commande, la livraison d'un colis ou votre abonnement Looby+ ? Envoyez-nous un message et notre équipe vous répondra rapidement.")
                             .font(.system(size: 13))
                             .foregroundStyle(LivriaPalette.inkMuted)
                             .multilineTextAlignment(.center)
@@ -73,7 +73,7 @@ public struct SupportAssistanceView: View {
             .padding(16)
         }
         .livriaThemedBackground(store.currentThemeId)
-        .navigationTitle("Assistance Viple")
+        .navigationTitle("Service Client")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await store.refreshBootstrap()
@@ -89,32 +89,16 @@ public struct SupportAssistanceView: View {
     private var vipleAssistanceSyncHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: "bolt.horizontal.icloud.fill")
+                Image(systemName: "bubble.left.and.exclamationmark.bubble.right.fill")
                     .font(.title2)
                     .foregroundStyle(LivriaPalette.gold)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Synchronisation VipleAPI Temps Réel")
+                    Text("Service Client à votre écoute")
                         .font(.system(size: 15.5, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("Vos tickets sont synchronisés entre Livria.iOS, livria.store et assistance.viplenetwork.com")
+                    Text("Une question sur un livre, un colis ou votre abonnement ? Nous sommes là pour vous aider.")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.88))
-                }
-            }
-
-            if let url = URL(string: LivriaURLResolver.assistanceWebURL) {
-                Link(destination: url) {
-                    HStack {
-                        Image(systemName: "globe")
-                        Text("Ouvrir assistance.viplenetwork.com")
-                            .font(.system(size: 12.5, weight: .bold))
-                        Spacer()
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.16)))
-                    .foregroundStyle(.white)
                 }
             }
         }

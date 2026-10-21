@@ -11,6 +11,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var isShowingCheckoutSheet: Bool = false
     @Published public var isShowingAuthSheet: Bool = false
     @Published public var isShowingISBNScannerSheet: Bool = false
+    @Published public var scannedBookForDetail: LivriaBook? = nil
     @Published public var activeToastMessage: String? = nil
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
@@ -103,6 +104,59 @@ public final class LivriaStoreViewModel: ObservableObject {
 
     public var cartTotal: Double {
         cartSubtotal + cartShippingCost
+    }
+
+    public var isBuyGodUser: Bool {
+        guard let u = currentUser else { return false }
+        return u.isBuyGod || u.role.lowercased() == "buygod"
+    }
+
+    public var newestCatalogBooks: [LivriaBook] {
+        if let newest = homeData?.newest, !newest.isEmpty {
+            return newest
+        }
+        return books.sorted { $0.id > $1.id }
+    }
+
+    /// Algorithme de recommandation : si l'algorithme a moins de 5 livres à proposer, affiche les plus récemment ajoutés
+    public var smartRecommendationResult: (books: [LivriaBook], isRecentFallback: Bool) {
+        let favGenres = (currentUser?.favoriteGenres ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+
+        var algoBooks: [LivriaBook] = []
+        if !favGenres.isEmpty {
+            algoBooks = books.filter { b in
+                favGenres.contains(b.genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            }
+        }
+        if algoBooks.count < 5, let serverRecs = homeData?.recommended, serverRecs.count >= 5 {
+            algoBooks = serverRecs
+        }
+        if algoBooks.count < 5 {
+            return (Array(newestCatalogBooks.prefix(12)), true)
+        }
+        return (Array(algoBooks.prefix(12)), false)
+    }
+
+    /// Recherche un ISBN directement dans le catalogue Livria (local puis serveur Livria)
+    public func findBookInLivriaCatalog(isbn rawIsbn: String) async -> LivriaBook? {
+        let clean = rawIsbn.filter { $0.isNumber || $0 == "X" || $0 == "x" }.uppercased()
+        guard !clean.isEmpty else { return nil }
+
+        if let localMatch = books.first(where: {
+            $0.isbn.filter({ $0.isNumber || $0 == "X" || $0 == "x" }).uppercased() == clean
+        }) {
+            return localMatch
+        }
+
+        if let res = try? await LivriaAPIClient.shared.lookupISBN(clean),
+           res.inCatalog,
+           let catBook = res.catalogBook {
+            return catBook
+        }
+        return nil
     }
 
     public func showToast(_ text: String) {
@@ -327,7 +381,12 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func createPayPalExpressSession(walletSource: String, amount: Double) async -> LivriaPayPalCreateResponse? {
-        try? await LivriaAPIClient.shared.createPayPalExpressOrder(amount: max(0.50, amount), walletSource: walletSource)
+        do {
+            return try await LivriaAPIClient.shared.createPayPalExpressOrder(amount: max(0.50, amount), walletSource: walletSource)
+        } catch {
+            showToast(error.localizedDescription)
+            return nil
+        }
     }
 
     public func placeOrder(
@@ -348,6 +407,7 @@ public final class LivriaStoreViewModel: ObservableObject {
         isClickAndCollect: Bool,
         relayId: Int?,
         walletSource: String = "paypal",
+        payPalOrderId: String? = nil,
         addSuspendedBook: Bool = false
     ) async -> LivriaCheckoutResponse? {
         let resolvedEmail = !guestEmail.isEmpty ? guestEmail : email
@@ -373,15 +433,12 @@ public final class LivriaStoreViewModel: ObservableObject {
         payload["isClickAndCollect"] = isClickAndCollect
         payload["walletSource"] = resolvedWallet
         payload["addSuspendedBook"] = addSuspendedBook
+        if let payPalOrderId, !payPalOrderId.isEmpty {
+            payload["payPalOrderId"] = payPalOrderId
+        }
         if let relayId {
             payload["relayId"] = relayId
         }
-
-        // Création de l'ordre PayPal / Apple Pay / Google Pay via l'API PayPal
-        _ = try? await LivriaAPIClient.shared.createPayPalExpressOrder(
-            amount: max(0.50, cartTotal + (isGiftWrapped ? 2.50 : 0) + (addSuspendedBook ? 2.00 : 0)),
-            walletSource: resolvedWallet
-        )
 
         do {
             let res: LivriaCheckoutResponse = try await LivriaAPIClient.shared.postJSON("/checkout", body: payload)
@@ -595,15 +652,43 @@ public final class LivriaStoreViewModel: ObservableObject {
 
     // MARK: - 7. Points Relais Communautaires & UPS Access Point™
 
-    public func searchUpsRelays(query: String) async -> [LivriaUpsPickupPoint] {
+    public func searchUpsRelays(
+        query: String? = nil,
+        cp: String? = nil,
+        ville: String? = nil,
+        lat: Double? = nil,
+        lon: Double? = nil
+    ) async -> [LivriaUpsPickupPoint] {
         do {
-            let res: LivriaUpsSearchResponse = try await LivriaAPIClient.shared.getJSON(
-                "/relays/ups",
-                queryItems: [URLQueryItem(name: "query", value: query)]
-            )
+            let res = try await LivriaAPIClient.shared.searchUpsRelays(query: query, cp: cp, ville: ville, lat: lat, lon: lon)
+            if !res.points.isEmpty {
+                if var currentRelays = self.relays {
+                    currentRelays.upsPoints = res.points
+                    self.relays = currentRelays
+                }
+            }
             return res.points
         } catch {
             return relays?.upsPoints ?? []
+        }
+    }
+
+    public func searchUpsRelaysDetailed(
+        query: String? = nil,
+        cp: String? = nil,
+        ville: String? = nil,
+        lat: Double? = nil,
+        lon: Double? = nil
+    ) async -> LivriaUpsSearchResponse? {
+        do {
+            let res = try await LivriaAPIClient.shared.searchUpsRelays(query: query, cp: cp, ville: ville, lat: lat, lon: lon)
+            if !res.points.isEmpty, var currentRelays = self.relays {
+                currentRelays.upsPoints = res.points
+                self.relays = currentRelays
+            }
+            return res
+        } catch {
+            return nil
         }
     }
 

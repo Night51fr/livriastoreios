@@ -133,10 +133,27 @@ public final class LivriaAPIClient {
         try await getJSON("/books/\(bookId)")
     }
 
-    /// Recherche par ISBN (Google Books Priorité 1 avec vérification stricte + OpenLibrary Fallback)
+    /// Recherche par ISBN dans le catalogue Livria
     public func lookupISBN(_ isbn: String) async throws -> LivriaIsbnLookupResponse {
         let clean = isbn.filter { $0.isNumber || $0 == "X" || $0 == "x" }
         return try await getJSON("/isbn/\(clean)")
+    }
+
+    /// Recherche de points relais UPS par code postal, ville ou géolocalisation GPS
+    public func searchUpsRelays(
+        query: String? = nil,
+        cp: String? = nil,
+        ville: String? = nil,
+        lat: Double? = nil,
+        lon: Double? = nil
+    ) async throws -> LivriaUpsSearchResponse {
+        var items: [URLQueryItem] = []
+        if let query, !query.isEmpty { items.append(URLQueryItem(name: "query", value: query)) }
+        if let cp, !cp.isEmpty { items.append(URLQueryItem(name: "cp", value: cp)) }
+        if let ville, !ville.isEmpty { items.append(URLQueryItem(name: "ville", value: ville)) }
+        if let lat { items.append(URLQueryItem(name: "lat", value: String(lat))) }
+        if let lon { items.append(URLQueryItem(name: "lon", value: String(lon))) }
+        return try await getJSON("/relays/ups", queryItems: items)
     }
 
     /// Recherche de membres publics (redirigeant vers Livria Social)

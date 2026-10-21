@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 // MARK: - Convertisseur d'URL Livria Store (/covers/* -> https://livria.store/covers/*)
 
@@ -33,7 +34,7 @@ public enum LivriaURLResolver: Sendable {
     }
 }
 
-// MARK: - Thème & Palette Livria Store (iOS 18+ MeshGradient & iOS 26 Liquid Glass)
+// MARK: - Thème & Palette Livria Store
 
 public enum LivriaPalette: Sendable {
     public static let background = Color(red: 0.984, green: 0.969, blue: 1.000)       // #FBF7FF
@@ -77,7 +78,7 @@ public enum LivriaPalette: Sendable {
     }
 }
 
-// MARK: - Fond Dynamique iOS 18 MeshGradient & iOS 26 Liquid Glass
+// MARK: - Fond Dynamique MeshGradient
 
 public struct LivriaMeshHeroBackground: View {
     public init() {}
@@ -116,7 +117,7 @@ public struct LivriaSiteThemeOption: Identifiable, Equatable, Sendable {
     public let icon: String
 
     public static let all: [LivriaSiteThemeOption] = [
-        .init(id: "default", name: "Lavande Classique", subtitle: "Thème original Livria Store", colors: [LivriaPalette.background, LivriaPalette.backgroundAlt], icon: "sparkles"),
+        .init(id: "default", name: "Lavande Classique", subtitle: "Ambiance originale Livria", colors: [LivriaPalette.background, LivriaPalette.backgroundAlt], icon: "sparkles"),
         .init(id: "parchment", name: "Parchemin d'Alexandrie", subtitle: "Ambiance librairie ancienne", colors: [Color(red: 0.96, green: 0.90, blue: 0.78), Color(red: 0.89, green: 0.78, blue: 0.62)], icon: "book.closed.fill"),
         .init(id: "sakura", name: "Brume de Sakura", subtitle: "Douceur florale japonaise", colors: [Color(red: 0.99, green: 0.86, blue: 0.92), Color(red: 0.93, green: 0.79, blue: 0.96)], icon: "leaf.fill"),
         .init(id: "aurora", name: "Aurore Boréale", subtitle: "Reflets célestes émeraude & violet", colors: [Color(red: 0.78, green: 0.95, blue: 0.91), Color(red: 0.82, green: 0.80, blue: 0.98)], icon: "moon.stars.fill"),
@@ -139,7 +140,6 @@ public struct LivriaThemedBackground: ViewModifier {
         ZStack {
             LinearGradient(colors: opt.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
-            // Voile semi-transparent 72% (60-80%) pour garantir une lisibilité parfaite
             LivriaPalette.background.opacity(opt.id == "default" ? 0.92 : 0.72)
                 .ignoresSafeArea()
             content
@@ -152,34 +152,19 @@ extension View {
         modifier(LivriaThemedBackground(themeId: themeId))
     }
 
-    /// Applique un style de carte Livria Store natif avec prise en charge d'iOS 26 Liquid Glass lorsque disponible
     @ViewBuilder
     public func livriaCard(cornerRadius: CGFloat = 20, padding: CGFloat = 16) -> some View {
-        if #available(iOS 26.0, *) {
-            self
-                .padding(padding)
-                .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(LivriaPalette.cardPaper.opacity(0.92))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(LivriaPalette.border, lineWidth: 1)
-                )
-                .shadow(color: LivriaPalette.primary.opacity(0.07), radius: 14, x: 0, y: 6)
-        } else {
-            self
-                .padding(padding)
-                .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(LivriaPalette.cardPaper)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(LivriaPalette.border, lineWidth: 1)
-                )
-                .shadow(color: LivriaPalette.primary.opacity(0.06), radius: 12, x: 0, y: 5)
-        }
+        self
+            .padding(padding)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(LivriaPalette.cardPaper)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(LivriaPalette.border, lineWidth: 1)
+            )
+            .shadow(color: LivriaPalette.primary.opacity(0.06), radius: 12, x: 0, y: 5)
     }
 }
 
@@ -356,7 +341,6 @@ public final class LivriaAmbientSoundPlayer: ObservableObject {
     @Published public private(set) var activePreset: String? = nil
     private var engine: AVAudioEngine?
     private var sourceNode: AVAudioSourceNode?
-    private var filterState: Float = 0.0
 
     public init() {}
 
@@ -421,7 +405,186 @@ public final class LivriaAmbientSoundPlayer: ObservableObject {
     }
 }
 
-// MARK: - Feuille de Recherche & Scan ISBN (Google Books + OpenLibrary + Catalogue Livria Store)
+// MARK: - Caméra Directe Code-Barres EAN-13 / ISBN (AVCaptureSession temps réel)
+
+public struct LivriaBarcodeCameraView: UIViewControllerRepresentable {
+    public var isScanning: Bool
+    public var torchEnabled: Bool
+    public var onCodeScanned: (String) -> Void
+    public var onCameraUnavailable: () -> Void
+
+    public init(
+        isScanning: Bool,
+        torchEnabled: Bool,
+        onCodeScanned: @escaping (String) -> Void,
+        onCameraUnavailable: @escaping () -> Void
+    ) {
+        self.isScanning = isScanning
+        self.torchEnabled = torchEnabled
+        self.onCodeScanned = onCodeScanned
+        self.onCameraUnavailable = onCameraUnavailable
+    }
+
+    public func makeUIViewController(context: Context) -> ScannerViewController {
+        let vc = ScannerViewController()
+        vc.onCodeScanned = onCodeScanned
+        vc.onCameraUnavailable = onCameraUnavailable
+        return vc
+    }
+
+    public func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {
+        uiViewController.setScanning(isScanning)
+        uiViewController.setTorch(torchEnabled)
+    }
+
+    public final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+        var onCodeScanned: ((String) -> Void)?
+        var onCameraUnavailable: (() -> Void)?
+
+        private let captureSession = AVCaptureSession()
+        private var previewLayer: AVCaptureVideoPreviewLayer?
+        private var isConfigured = false
+        private var allowDetection = true
+        private var lastDetectedCode: String = ""
+        private var lastDetectionDate: Date = .distantPast
+
+        public override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .black
+            configureCameraSession()
+        }
+
+        public override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            previewLayer?.frame = view.bounds
+        }
+
+        public override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            stopSession()
+        }
+
+        private func configureCameraSession() {
+            let status = AVCaptureDevice.authorizationStatus(for: .video)
+            switch status {
+            case .authorized:
+                setupSessionOnQueue()
+            case .notDetermined:
+                AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                    DispatchQueue.main.async {
+                        if granted {
+                            self?.setupSessionOnQueue()
+                        } else {
+                            self?.onCameraUnavailable?()
+                        }
+                    }
+                }
+            default:
+                DispatchQueue.main.async { [weak self] in
+                    self?.onCameraUnavailable?()
+                }
+            }
+        }
+
+        private func setupSessionOnQueue() {
+            guard !isConfigured else {
+                startSession()
+                return
+            }
+            guard let videoCaptureDevice = AVCaptureDevice.default(for: .video),
+                  let videoInput = try? AVCaptureDeviceInput(device: videoCaptureDevice),
+                  captureSession.canAddInput(videoInput) else {
+                onCameraUnavailable?()
+                return
+            }
+
+            captureSession.beginConfiguration()
+            captureSession.addInput(videoInput)
+
+            let metadataOutput = AVCaptureMetadataOutput()
+            if captureSession.canAddOutput(metadataOutput) {
+                captureSession.addOutput(metadataOutput)
+                metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+                let wantedTypes: [AVMetadataObject.ObjectType] = [.ean13, .ean8, .upce, .code128]
+                let supported = metadataOutput.availableMetadataObjectTypes
+                metadataOutput.metadataObjectTypes = wantedTypes.filter { supported.contains($0) }
+            } else {
+                captureSession.commitConfiguration()
+                onCameraUnavailable?()
+                return
+            }
+            captureSession.commitConfiguration()
+
+            let layer = AVCaptureVideoPreviewLayer(session: captureSession)
+            layer.frame = view.layer.bounds
+            layer.videoGravity = .resizeAspectFill
+            view.layer.insertSublayer(layer, at: 0)
+            self.previewLayer = layer
+            self.isConfigured = true
+            startSession()
+        }
+
+        func setScanning(_ active: Bool) {
+            allowDetection = active
+            if active {
+                lastDetectedCode = ""
+                startSession()
+            }
+        }
+
+        func setTorch(_ on: Bool) {
+            guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
+            do {
+                try device.lockForConfiguration()
+                device.torchMode = on ? .on : .off
+                device.unlockForConfiguration()
+            } catch {}
+        }
+
+        private func startSession() {
+            guard isConfigured, !captureSession.isRunning else { return }
+            let session = captureSession
+            DispatchQueue.global(qos: .userInitiated).async {
+                session.startRunning()
+            }
+        }
+
+        private func stopSession() {
+            guard captureSession.isRunning else { return }
+            let session = captureSession
+            DispatchQueue.global(qos: .userInitiated).async {
+                session.stopRunning()
+            }
+        }
+
+        public func metadataOutput(
+            _ output: AVCaptureMetadataOutput,
+            didOutput metadataObjects: [AVMetadataObject],
+            from connection: AVCaptureConnection
+        ) {
+            guard allowDetection else { return }
+            guard let metadataObject = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+                  let rawString = metadataObject.stringValue else { return }
+
+            let cleaned = rawString.filter { $0.isNumber || $0 == "X" || $0 == "x" }
+            guard cleaned.count >= 10 else { return }
+
+            let now = Date()
+            if cleaned == lastDetectedCode && now.timeIntervalSince(lastDetectionDate) < 2.2 {
+                return
+            }
+            lastDetectedCode = cleaned
+            lastDetectionDate = now
+            allowDetection = false
+
+            let generator = UIImpactFeedbackGenerator(style: .rigid)
+            generator.impactOccurred()
+            onCodeScanned?(cleaned)
+        }
+    }
+}
+
+// MARK: - Scanner ISBN Direct avec Caméra Temps Réel + Animation "Livre trouvé !" -> Fiche du Livre
 
 public struct LivriaISBNScannerSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -430,10 +593,17 @@ public struct LivriaISBNScannerSheet: View {
     public var onSelectCatalogBook: ((LivriaBook) -> Void)?
     public var onSelectISBNResult: ((LivriaISBNLookupResponse) -> Void)?
 
-    @State private var isbnInput: String = ""
-    @State private var isSearching: Bool = false
-    @State private var lookupResult: LivriaISBNLookupResponse? = nil
-    @State private var errorMessage: String? = nil
+    @State private var isScanningCamera: Bool = true
+    @State private var torchEnabled: Bool = false
+    @State private var cameraUnavailable: Bool = false
+    @State private var laserOffset: CGFloat = -95
+    @State private var isSearchingCatalog: Bool = false
+    @State private var detectedISBNCode: String = ""
+    @State private var foundBook: LivriaBook? = nil
+    @State private var showBookFoundAnimation: Bool = false
+    @State private var notFoundMessage: String? = nil
+    @State private var showManualField: Bool = false
+    @State private var manualISBN: String = ""
 
     public init(
         onSelectCatalogBook: ((LivriaBook) -> Void)? = nil,
@@ -444,166 +614,437 @@ public struct LivriaISBNScannerSheet: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    // Visuel Scanner Code-barres EAN-13
-                    VStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .fill(LivriaPalette.heroGradient)
-                                .frame(height: 156)
+        ZStack {
+            // 1. Vue appareil photo plein écran directe
+            if !cameraUnavailable {
+                LivriaBarcodeCameraView(
+                    isScanning: isScanningCamera && !isSearchingCatalog && foundBook == nil,
+                    torchEnabled: torchEnabled,
+                    onCodeScanned: { code in
+                        handleScannedISBN(code)
+                    },
+                    onCameraUnavailable: {
+                        cameraUnavailable = true
+                        showManualField = true
+                    }
+                )
+                .ignoresSafeArea()
+            } else {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.09, green: 0.05, blue: 0.20),
+                        Color(red: 0.22, green: 0.11, blue: 0.44),
+                        Color(red: 0.12, green: 0.06, blue: 0.25)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            }
 
-                            VStack(spacing: 8) {
-                                Image(systemName: "barcode.viewfinder")
-                                    .font(.system(size: 52, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Text("Scanner ou saisir un code ISBN-13")
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white)
-                                Text("Recherche instantanée dans Livria Store, Google Books & OpenLibrary")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.white.opacity(0.88))
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 16)
-                            }
+            // Assombrissement autour du cadre de visée
+            Color.black.opacity(cameraUnavailable ? 0.25 : 0.42)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Barre supérieure (Fermer + Lampe torche)
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Fermer")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .foregroundStyle(.white)
+                    }
 
-                        HStack(spacing: 10) {
-                            HStack {
-                                Image(systemName: "barcode")
-                                    .foregroundStyle(LivriaPalette.primary)
-                                TextField("Ex: 9782070368228 ou 9782253004226", text: $isbnInput)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                            }
-                            .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaPalette.border, lineWidth: 1))
+                    Spacer()
 
-                            Button {
-                                performSearch()
-                            } label: {
-                                if isSearching {
-                                    ProgressView().tint(.white)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                } else {
-                                    Text("Rechercher")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                }
-                            }
-                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primary))
+                    HStack(spacing: 6) {
+                        Image(systemName: "barcode.viewfinder")
+                            .foregroundStyle(LivriaPalette.gold)
+                        Text("Scan ISBN Livria")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
                             .foregroundStyle(.white)
-                            .disabled(isbnInput.trimmingCharacters(in: .whitespaces).isEmpty || isSearching)
-                        }
                     }
-                    .livriaCard()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
 
-                    if let err = errorMessage {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            Text(err)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(LivriaPalette.ink)
-                        }
-                        .livriaCard()
-                    }
+                    Spacer()
 
-                    if let res = lookupResult, res.ok {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(alignment: .top, spacing: 14) {
-                                LivriaBookCoverView(
-                                    coverUrl: res.coverUrl ?? res.catalogBook?.coverUrl,
-                                    title: res.title ?? res.catalogBook?.title ?? "Livre",
-                                    width: 90,
-                                    height: 132,
-                                    cornerRadius: 12
+                    if !cameraUnavailable {
+                        Button {
+                            torchEnabled.toggle()
+                        } label: {
+                            Image(systemName: torchEnabled ? "flashlight.on.fill" : "flashlight.off.fill")
+                                .font(.system(size: 16, weight: .bold))
+                                .frame(width: 40, height: 40)
+                                .background(
+                                    Circle().fill(torchEnabled ? LivriaPalette.gold : Color.white.opacity(0.20))
                                 )
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(res.inCatalog ? "Disponible dans Livria Store" : "Identifié via Google Books / OpenLibrary")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .padding(.horizontal, 9)
-                                        .padding(.vertical, 4)
-                                        .background(Capsule().fill(res.inCatalog ? LivriaPalette.mint.opacity(0.18) : LivriaPalette.primarySoft))
-                                        .foregroundStyle(res.inCatalog ? LivriaPalette.mint : LivriaPalette.primary)
-
-                                    Text(res.title ?? res.catalogBook?.title ?? "")
-                                        .font(.system(size: 17, weight: .bold, design: .serif))
-                                        .foregroundStyle(LivriaPalette.ink)
-
-                                    Text(res.author ?? res.catalogBook?.author ?? "")
-                                        .font(.system(size: 13.5, weight: .medium))
-                                        .foregroundStyle(LivriaPalette.inkMuted)
-
-                                    if let isbn = res.isbn {
-                                        Text("ISBN : \(isbn)")
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(LivriaPalette.inkMuted)
-                                    }
-                                }
-                            }
-
-                            if let catBook = res.catalogBook, let onSelectCatalogBook {
-                                Button {
-                                    dismiss()
-                                    onSelectCatalogBook(catBook)
-                                } label: {
-                                    Label("Ouvrir la fiche dans la Boutique (\(String(format: "%.2f €", catBook.price)))", systemImage: "bag.fill")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primary))
-                                        .foregroundStyle(.white)
-                                }
-                            }
-
-                            if let onSelectISBNResult {
-                                Button {
-                                    onSelectISBNResult(res)
-                                    dismiss()
-                                } label: {
-                                    Label("Utiliser cet ouvrage pour mon annonce de Troc", systemImage: "arrow.triangle.2.circlepath")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.coral))
-                                        .foregroundStyle(.white)
-                                }
-                            }
+                                .foregroundStyle(torchEnabled ? .black : .white)
                         }
-                        .livriaCard()
+                    } else {
+                        Color.clear.frame(width: 40, height: 40)
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+
+                Spacer()
+
+                // Cadre de visée laser (style Wingman)
+                if foundBook == nil {
+                    VStack(spacing: 18) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .stroke(Color.white.opacity(0.32), lineWidth: 1.5)
+                                .frame(width: 286, height: 196)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                        .fill(Color.black.opacity(0.16))
+                                )
+
+                            // Coins lumineux du viseur
+                            ScannerCornersOverlay()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [LivriaPalette.gold, LivriaPalette.coral, LivriaPalette.primary],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    style: StrokeStyle(lineWidth: 4.5, lineCap: .round)
+                                )
+                                .frame(width: 286, height: 196)
+
+                            // Ligne laser animée
+                            if !cameraUnavailable && isScanningCamera {
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.clear, LivriaPalette.coral, LivriaPalette.gold, LivriaPalette.coral, .clear],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(width: 254, height: 3)
+                                    .shadow(color: LivriaPalette.coral.opacity(0.9), radius: 8)
+                                    .offset(y: laserOffset)
+                                    .onAppear {
+                                        withAnimation(.easeInOut(duration: 1.65).repeatForever(autoreverses: true)) {
+                                            laserOffset = 95
+                                        }
+                                    }
+                            }
+
+                            if isSearchingCatalog {
+                                VStack(spacing: 10) {
+                                    ProgressView()
+                                        .scaleEffect(1.3)
+                                        .tint(LivriaPalette.gold)
+                                    Text("Recherche de l'ISBN \(detectedISBNCode) dans le catalogue Livria...")
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 16)
+                                }
+                                .padding(18)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                            }
+                        }
+
+                        VStack(spacing: 6) {
+                            Text("Placez le code-barres au dos du livre dans le cadre")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                            Text("Détection automatique dans le catalogue Livria Store")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.82))
+                        }
+                        .padding(.horizontal, 24)
+                    }
+                }
+
+                Spacer()
+
+                // Message si livre absent du catalogue
+                if let msg = notFoundMessage, foundBook == nil {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "book.closed.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(LivriaPalette.gold)
+                            Text(msg)
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.leading)
+                        }
+
+                        Button {
+                            withAnimation {
+                                notFoundMessage = nil
+                                isScanningCamera = true
+                            }
+                        } label: {
+                            Label("Scanner un autre code-barres", systemImage: "camera.viewfinder")
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 10)
+                                .background(Capsule().fill(LivriaPalette.gold))
+                                .foregroundStyle(.black)
+                        }
+                    }
+                    .padding(16)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                // Option discrète de saisie manuelle si le code-barres est abîmé
+                if foundBook == nil {
+                    VStack(spacing: 10) {
+                        if showManualField {
+                            HStack(spacing: 10) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "barcode")
+                                        .foregroundStyle(LivriaPalette.gold)
+                                    TextField("Saisir l'ISBN (ex: 9782070368228)", text: $manualISBN)
+                                        .keyboardType(.numbersAndPunctuation)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                        .foregroundStyle(.white)
+                                }
+                                .padding(12)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.14)))
+
+                                Button {
+                                    handleScannedISBN(manualISBN)
+                                } label: {
+                                    Text("Valider")
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                        .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.primary))
+                                        .foregroundStyle(.white)
+                                }
+                                .disabled(manualISBN.trimmingCharacters(in: .whitespaces).isEmpty || isSearchingCatalog)
+                            }
+                        } else {
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showManualField = true
+                                }
+                            } label: {
+                                Label("Code-barres illisible ? Saisir les chiffres manuellement", systemImage: "keyboard")
+                                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.88))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(Capsule().fill(Color.white.opacity(0.14)))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 26)
+                }
             }
-            .livriaThemedBackground(store.currentThemeId)
-            .navigationTitle("Scanner / ISBN")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Fermer") { dismiss() }
+
+            // 2. Animation plein écran "Livre trouvé !" puis redirection directe vers la fiche du livre
+            if let book = foundBook {
+                ZStack {
+                    Color.black.opacity(0.76)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+
+                    VStack(spacing: 18) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    RadialGradient(
+                                        colors: [LivriaPalette.mint.opacity(0.55), LivriaPalette.primary.opacity(0.05)],
+                                        center: .center,
+                                        startRadius: 10,
+                                        endRadius: 80
+                                    )
+                                )
+                                .frame(width: 132, height: 132)
+                                .scaleEffect(showBookFoundAnimation ? 1.12 : 0.6)
+
+                            Circle()
+                                .fill(LivriaPalette.mint)
+                                .frame(width: 74, height: 74)
+                                .shadow(color: LivriaPalette.mint.opacity(0.6), radius: 16, x: 0, y: 6)
+
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 34, weight: .black))
+                                .foregroundStyle(.white)
+                        }
+                        .scaleEffect(showBookFoundAnimation ? 1.0 : 0.4)
+
+                        Text("Livre trouvé !")
+                            .font(.system(size: 28, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        Text("Ouverture directe de la fiche dans Livria Store...")
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(LivriaPalette.goldSoft)
+
+                        HStack(spacing: 16) {
+                            LivriaBookCoverView(
+                                coverUrl: book.coverUrl,
+                                title: book.title,
+                                width: 84,
+                                height: 124,
+                                cornerRadius: 12
+                            )
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(book.displayGenre)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 3.5)
+                                    .background(Capsule().fill(LivriaPalette.primarySoft))
+                                    .foregroundStyle(LivriaPalette.primaryDeep)
+
+                                Text(book.title)
+                                    .font(.system(size: 17, weight: .bold, design: .serif))
+                                    .foregroundStyle(LivriaPalette.ink)
+                                    .lineLimit(2)
+
+                                Text(book.author)
+                                    .font(.system(size: 13.5, weight: .medium))
+                                    .foregroundStyle(LivriaPalette.inkMuted)
+
+                                Text(String(format: "%.2f €", book.price))
+                                    .font(.system(size: 19, weight: .black, design: .rounded))
+                                    .foregroundStyle(LivriaPalette.primary)
+                            }
+                            Spacer()
+                        }
+                        .padding(16)
+                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(LivriaPalette.cardPaper))
+                        .padding(.horizontal, 24)
+
+                        Button {
+                            openFoundBookNow(book)
+                        } label: {
+                            Label("Voir la fiche du livre maintenant", systemImage: "arrow.right.circle.fill")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .padding(.horizontal, 22)
+                                .padding(.vertical, 13)
+                                .background(Capsule().fill(LivriaPalette.gold))
+                                .foregroundStyle(.black)
+                        }
+                    }
+                    .scaleEffect(showBookFoundAnimation ? 1.0 : 0.82)
+                    .opacity(showBookFoundAnimation ? 1.0 : 0.0)
+                }
+                .zIndex(50)
+            }
+        }
+    }
+
+    private func handleScannedISBN(_ rawCode: String) {
+        let cleaned = rawCode.filter { $0.isNumber || $0 == "X" || $0 == "x" }
+        guard !cleaned.isEmpty else { return }
+
+        notFoundMessage = nil
+        detectedISBNCode = cleaned
+        isSearchingCatalog = true
+        isScanningCamera = false
+
+        Task {
+            if let matched = await store.findBookInLivriaCatalog(isbn: cleaned) {
+                isSearchingCatalog = false
+                let feedback = UINotificationFeedbackGenerator()
+                feedback.notificationOccurred(.success)
+
+                foundBook = matched
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) {
+                    showBookFoundAnimation = true
+                }
+
+                if let onSelectISBNResult {
+                    let resp = LivriaISBNLookupResponse(
+                        ok: true,
+                        inCatalog: true,
+                        isbn: matched.isbn,
+                        title: matched.title,
+                        author: matched.author,
+                        description: matched.description,
+                        coverUrl: matched.coverUrl,
+                        catalogBook: matched
+                    )
+                    onSelectISBNResult(resp)
+                }
+
+                try? await Task.sleep(nanoseconds: 1_150_000_000)
+                if foundBook?.id == matched.id {
+                    openFoundBookNow(matched)
+                }
+            } else {
+                isSearchingCatalog = false
+                let feedback = UINotificationFeedbackGenerator()
+                feedback.notificationOccurred(.warning)
+                withAnimation {
+                    notFoundMessage = "Aucun livre avec l'ISBN \(cleaned) n'a été trouvé dans le catalogue Livria Store."
                 }
             }
         }
     }
 
-    private func performSearch() {
-        errorMessage = nil
-        lookupResult = nil
-        isSearching = true
-        Task {
-            if let res = await store.lookupBookByISBN(isbn: isbnInput), res.ok {
-                lookupResult = res
+    private func openFoundBookNow(_ book: LivriaBook) {
+        let callback = onSelectCatalogBook
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            if let callback {
+                callback(book)
             } else {
-                errorMessage = "Aucun livre trouvé pour cet ISBN. Vérifiez les 10 ou 13 chiffres."
+                store.scannedBookForDetail = book
             }
-            isSearching = false
         }
+    }
+}
+
+private struct ScannerCornersOverlay: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let len: CGFloat = 34
+        let r: CGFloat = 24
+
+        // Haut-gauche
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + len))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX + len, y: rect.minY))
+
+        // Haut-droite
+        p.move(to: CGPoint(x: rect.maxX - len, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + len))
+
+        // Bas-droite
+        p.move(to: CGPoint(x: rect.maxX, y: rect.maxY - len))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.maxX - len, y: rect.maxY))
+
+        // Bas-gauche
+        p.move(to: CGPoint(x: rect.minX + len, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - len))
+
+        return p
     }
 }

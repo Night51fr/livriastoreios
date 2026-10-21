@@ -46,7 +46,10 @@ public struct BoutiqueView: View {
         }
 
         if selectedGenre != "Tous" {
-            list = list.filter { $0.genre.localizedCaseInsensitiveContains(selectedGenre) }
+            list = list.filter {
+                $0.displayGenre.localizedCaseInsensitiveCompare(selectedGenre) == .orderedSame ||
+                $0.genre.localizedCaseInsensitiveContains(selectedGenre)
+            }
         }
 
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -302,6 +305,13 @@ public struct BoutiqueView: View {
                         }
                         .padding(6)
                     }
+
+                    Text(book.displayGenre)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2.5)
+                        .background(Capsule().fill(LivriaPalette.primarySoft))
 
                     Text(book.title)
                         .font(.system(size: 14, weight: .bold))

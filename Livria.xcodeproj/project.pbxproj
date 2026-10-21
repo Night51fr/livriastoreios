@@ -155,10 +155,12 @@
 				APPLE_APP_STORE_ID = 6825159743;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Livria Store";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Livria Store utilise l'appareil photo pour scanner instantanément le code-barres ISBN de vos livres.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Livria Store utilise votre position pour afficher automatiquement les points relais UPS les plus proches de vous.";
 				"INFOPLIST_KEY_UISupportedInterfaceOrientations[sdk=*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -185,10 +187,12 @@
 				APPLE_APP_STORE_ID = 6825159743;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Livria Store";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Livria Store utilise l'appareil photo pour scanner instantanément le code-barres ISBN de vos livres.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Livria Store utilise votre position pour afficher automatiquement les points relais UPS les plus proches de vous.";
 				"INFOPLIST_KEY_UISupportedInterfaceOrientations[sdk=*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

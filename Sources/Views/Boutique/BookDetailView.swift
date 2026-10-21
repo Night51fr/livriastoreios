@@ -74,7 +74,7 @@ public struct BookDetailView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Text(book.genre)
+                    Text(book.displayGenre)
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(LivriaPalette.primary)
                         .padding(.horizontal, 10)
@@ -171,7 +171,7 @@ public struct BookDetailView: View {
                         conditionChoiceCard(
                             isUsed: true,
                             badge: "♻️ \(book.usedConditionLabel)",
-                            subtitle: "Vérifié par Viple Wingman (\(book.usedStock ?? 1) en stock)",
+                            subtitle: "Exemplaire contrôlé et garanti (\(book.usedStock ?? 1) en stock)",
                             price: book.effectiveUsedPrice,
                             accent: LivriaPalette.usedAmber
                         )

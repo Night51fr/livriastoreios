@@ -334,7 +334,7 @@ public struct TradeView: View {
     private var createOfferSheet: some View {
         NavigationStack {
             Form {
-                Section("Pré-remplissage rapide par ISBN (Google Books / OpenLibrary)") {
+                Section("Pré-remplissage rapide par Scan ISBN") {
                     HStack {
                         TextField("Code ISBN (ex: 9782070368228)", text: $newISBN)
                             .keyboardType(.numbersAndPunctuation)
@@ -344,11 +344,19 @@ public struct TradeView: View {
                             if isLookingUpISBN {
                                 ProgressView()
                             } else {
-                                Label("Auto-remplir", systemImage: "barcode.viewfinder")
+                                Label("Rechercher", systemImage: "magnifyingglass")
                                     .font(.system(size: 12.5, weight: .bold))
                             }
                         }
                         .disabled(newISBN.trimmingCharacters(in: .whitespaces).isEmpty || isLookingUpISBN)
+                    }
+
+                    Button {
+                        showingISBNScannerForNewOffer = true
+                    } label: {
+                        Label("Scanner le code-barres avec l'appareil photo", systemImage: "camera.viewfinder")
+                            .font(.system(size: 13.5, weight: .bold))
+                            .foregroundStyle(LivriaPalette.primary)
                     }
                 }
 
@@ -391,6 +399,21 @@ public struct TradeView: View {
                     }
                     .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+            }
+            .sheet(isPresented: $showingISBNScannerForNewOffer) {
+                LivriaISBNScannerSheet(
+                    onSelectCatalogBook: { foundBook in
+                        newISBN = foundBook.isbn
+                        newTitle = foundBook.title
+                        newAuthor = foundBook.author
+                    },
+                    onSelectISBNResult: { res in
+                        if let i = res.isbn, !i.isEmpty { newISBN = i }
+                        if let t = res.title, !t.isEmpty { newTitle = t }
+                        if let a = res.author, !a.isEmpty { newAuthor = a }
+                    }
+                )
+                .environmentObject(store)
             }
         }
     }

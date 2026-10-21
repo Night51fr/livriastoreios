@@ -61,7 +61,7 @@ public struct ProfileView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(LivriaPalette.gold)
-                        Text(store.currentUser?.authBadgeLabel ?? "Membre Viple Live ID")
+                        Text(store.currentUser?.isLivriaPlus == true ? "Abonné Club Looby+" : "Membre Livria")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.white.opacity(0.95))
                     }
@@ -69,9 +69,11 @@ public struct ProfileView: View {
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Color.white.opacity(0.16)))
 
-                    Text("ID Livria : \(store.currentUser?.livriaAccountId ?? "LID-VIPLE")")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(LivriaPalette.goldSoft)
+                    if let email = store.currentUser?.email, !email.isEmpty {
+                        Text(email)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LivriaPalette.goldSoft)
+                    }
                 }
                 Spacer()
             }
@@ -79,8 +81,8 @@ public struct ProfileView: View {
             if let url = URL(string: "\(LivriaURLResolver.identityWebURL)/compte") {
                 Link(destination: url) {
                     HStack {
-                        Image(systemName: "person.crop.circle.badge.Camera.fill")
-                        Text("Modifier mon profil & mon avatar Live")
+                        Image(systemName: "person.crop.circle.fill.badge.plus")
+                        Text("Changer ma photo de profil")
                             .font(.system(size: 13.5, weight: .bold))
                         Spacer()
                         Image(systemName: "arrow.up.right.square.fill")

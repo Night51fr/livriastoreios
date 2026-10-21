@@ -471,10 +471,10 @@ public struct VipleLiveAuthView: View {
 
     private var ecosystemFooter: some View {
         VStack(spacing: 6) {
-            Text("Livria Store (App Store ID : 6825159743) • Viple Network")
+            Text("Livria Store • Votre librairie Neuf, Occasion & Troc")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(LivriaPalette.inkMuted)
-            Text("Compatible iOS 18+ et optimisé pour le design iOS 26 Liquid Glass")
+            Text("Paiements sécurisés et expéditions suivies partout en France")
                 .font(.system(size: 10.5))
                 .foregroundStyle(LivriaPalette.inkMuted.opacity(0.8))
         }

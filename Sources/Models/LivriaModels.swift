@@ -150,6 +150,14 @@ public struct LivriaBook: Codable, Identifiable, Equatable, Hashable, Sendable {
         LivriaURLResolver.resolve(coverUrl)
     }
 
+    public var displayGenre: String {
+        let trimmed = genre.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.count > 11 {
+            return "Inconnu"
+        }
+        return trimmed
+    }
+
     public var effectiveNewStock: Int {
         max(0, stock)
     }
@@ -372,11 +380,19 @@ public struct LivriaOrder: Codable, Identifiable, Equatable, Sendable {
     public var hasShipping: Bool
     public var hasLabel: Bool
     public var deliveryUrl: String
+    public var labelUrl: String?
     public var shippingAddress: String
     public var isGiftWrapped: Bool
     public var isZeroWastePackaging: Bool
     public var isClickAndCollect: Bool
     public var items: [LivriaOrderItem]
+
+    public var effectiveLabelUrl: String {
+        if let labelUrl = labelUrl, !labelUrl.isEmpty {
+            return labelUrl
+        }
+        return "https://livria.store/api/mobile/v1/orders/\(id)/label?auth=\(accessCode ?? "")"
+    }
 }
 
 public struct LivriaOrderItem: Codable, Identifiable, Equatable, Sendable {
@@ -401,6 +417,7 @@ public struct LivriaCheckoutResponse: Codable, Sendable {
     public var reference: String?
     public var trackingNumber: String?
     public var deliveryUrl: String?
+    public var labelUrl: String?
     public var activatedLoobyPlus: Bool?
     public var isGuestOrder: Bool?
     public var canCreateAccount: Bool?
@@ -569,6 +586,10 @@ public struct LivriaUpsPickupPoint: Codable, Identifiable, Equatable, Sendable {
 public struct LivriaUpsSearchResponse: Codable, Sendable {
     public var ok: Bool
     public var externalPickupUrl: String
+    public var resolvedPostalCode: String?
+    public var resolvedCity: String?
+    public var centerLatitude: Double?
+    public var centerLongitude: Double?
     public var points: [LivriaUpsPickupPoint]
 }
 
