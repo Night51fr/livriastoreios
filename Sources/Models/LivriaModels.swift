@@ -55,6 +55,57 @@ public struct LivriaCrossAppAccount: Codable, Equatable, Sendable, Identifiable 
 
     public var id: Int { userId }
 
+    public init(
+        sourceApp: String = "Livria Social",
+        targetApp: String = "Livria Store",
+        userId: Int,
+        email: String,
+        displayName: String,
+        firstName: String = "",
+        lastName: String = "",
+        cid: String = "",
+        avatarUrl: String = "",
+        bio: String = "",
+        level: Int = 1,
+        xp: Int = 0,
+        isLivriaPlus: Bool = false
+    ) {
+        self.userId = userId
+        self.email = email
+        self.displayName = displayName
+        self.firstName = firstName
+        self.lastName = lastName
+        self.cid = cid
+        self.avatarUrl = avatarUrl
+        self.bio = bio
+        self.isLivriaPlus = isLivriaPlus
+        self.level = level
+        self.xp = xp
+        self.sourceApp = sourceApp
+        self.targetApp = targetApp
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userId, email, displayName, firstName, lastName, cid, avatarUrl, bio, isLivriaPlus, level, xp, sourceApp, targetApp
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        userId = (try? c.decode(Int.self, forKey: .userId)) ?? 0
+        email = (try? c.decode(String.self, forKey: .email)) ?? ""
+        displayName = (try? c.decode(String.self, forKey: .displayName)) ?? ""
+        firstName = (try? c.decode(String.self, forKey: .firstName)) ?? ""
+        lastName = (try? c.decode(String.self, forKey: .lastName)) ?? ""
+        cid = (try? c.decode(String.self, forKey: .cid)) ?? ""
+        avatarUrl = (try? c.decode(String.self, forKey: .avatarUrl)) ?? ""
+        bio = (try? c.decode(String.self, forKey: .bio)) ?? ""
+        isLivriaPlus = (try? c.decode(Bool.self, forKey: .isLivriaPlus)) ?? false
+        level = (try? c.decode(Int.self, forKey: .level)) ?? 1
+        xp = (try? c.decode(Int.self, forKey: .xp)) ?? 0
+        sourceApp = (try? c.decode(String.self, forKey: .sourceApp)) ?? "Livria Social"
+        targetApp = (try? c.decode(String.self, forKey: .targetApp)) ?? "Livria Store"
+    }
+
     public var fullNameOrDisplay: String {
         let full = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespacesAndNewlines)
         return full.isEmpty ? displayName : full
@@ -71,6 +122,21 @@ public struct LivriaCrossAppDiscoverResponse: Codable, Sendable {
     public var ok: Bool
     public var hasDetectedAccount: Bool
     public var account: LivriaCrossAppAccount?
+
+    public var hasAccount: Bool { hasDetectedAccount }
+
+    enum CodingKeys: String, CodingKey {
+        case ok, hasDetectedAccount, hasAccount, account
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
+        hasDetectedAccount = (try? c.decode(Bool.self, forKey: .hasDetectedAccount))
+            ?? (try? c.decode(Bool.self, forKey: .hasAccount))
+            ?? false
+        account = try? c.decodeIfPresent(LivriaCrossAppAccount.self, forKey: .account)
+    }
 }
 
 public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
