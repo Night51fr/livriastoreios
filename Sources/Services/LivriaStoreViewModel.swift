@@ -1,10 +1,13 @@
 import Foundation
 import SwiftUI
+import StoreKit
 
 // MARK: - ViewModel Principal « Livria Store » (App Store ID : 6825159743 • iOS 18+ / iOS 26+)
 
 @MainActor
 public final class LivriaStoreViewModel: ObservableObject {
+    public static let loobyPlusProductID = "store.livria.loobyplus.monthly"
+
     // Navigation & UI
     @Published public var selectedMainTab: Int = 0
     @Published public var isShowingCartSheet: Bool = false
@@ -16,6 +19,16 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var activeToastMessage: String? = nil
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
+    @Published public var applePasswordSetupNotice: String? = nil
+
+    // Onboarding Sign in with Apple (Uniquement à la 1re inscription Apple : Nom, Prénom, Pseudo & @viplemail.fr obligatoire)
+    @Published public var pendingAppleOnboardingUserId: String? = nil
+    @Published public var pendingAppleOnboardingEmail: String? = nil
+    @Published public var pendingAppleSuggestedFirstName: String = ""
+    @Published public var pendingAppleSuggestedLastName: String = ""
+
+    // In-App Purchase StoreKit 2 Looby+
+    @Published public var isPurchasingLoobyPlus: Bool = false
 
     // Conditions Générales d'Utilisation & de Vente (obligatoires au 1er lancement)
     @Published public var hasAcceptedTermsOfUse: Bool = false
@@ -236,14 +249,41 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
-    // MARK: - 1. Authentification Native Viple Live ID
+    // MARK: - 1. Authentification Native Viple Live ID & Sign in with Apple
+
+    private var currentGuestUserIdForMerge: Int? {
+        if let u = currentUser, u.isGuestAccount {
+            return u.id
+        }
+        return nil
+    }
+
+    private var currentGuestEmailForMerge: String? {
+        if let g = defaults.string(forKey: savedGuestEmailKey), !g.isEmpty {
+            return g
+        }
+        if let u = currentUser, u.isGuestAccount {
+            return u.email
+        }
+        return nil
+    }
 
     public func signIn(email: String, password: String) async {
         isLoading = true
         authErrorMessage = nil
+        applePasswordSetupNotice = nil
         defer { isLoading = false }
         do {
-            let res = try await LivriaAPIClient.shared.loginVipleLiveID(email: email, password: password)
+            let res = try await LivriaAPIClient.shared.loginVipleLiveID(
+                email: email,
+                password: password,
+                guestUserId: currentGuestUserIdForMerge,
+                guestEmail: currentGuestEmailForMerge
+            )
+            if res.requiresApplePasswordSetup == true {
+                applePasswordSetupNotice = res.error ?? "Vous vous êtes inscrit avec Apple et n'avez pas encore défini de mot de passe. Un e-mail vient d'être envoyé sur votre boîte mail iCloud (\(res.icloudEmail ?? "iCloud")) avec un lien pour créer votre mot de passe."
+                return
+            }
             guard res.ok, let user = res.user else {
                 authErrorMessage = res.error ?? "Identifiant Viple Live ID ou mot de passe incorrect."
                 return
@@ -252,6 +292,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.isAuthenticated = !user.isGuestAccount
             defaults.set(user.email, forKey: savedEmailKey)
             defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Connecté avec votre compte Viple Live ID (\(user.displayName))")
             await refreshBootstrap(email: user.email, userId: user.id)
@@ -271,6 +312,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     ) async {
         isLoading = true
         authErrorMessage = nil
+        applePasswordSetupNotice = nil
         defer { isLoading = false }
         do {
             let res = try await LivriaAPIClient.shared.registerVipleLiveID(
@@ -280,7 +322,9 @@ public final class LivriaStoreViewModel: ObservableObject {
                 password: password,
                 firstName: firstName,
                 lastName: lastName,
-                displayName: displayName
+                displayName: displayName,
+                guestUserId: currentGuestUserIdForMerge,
+                guestEmail: currentGuestEmailForMerge
             )
             guard res.ok, let user = res.user else {
                 authErrorMessage = res.error ?? "Impossible de créer le compte Viple Live ID."
@@ -290,6 +334,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.isAuthenticated = true
             defaults.set(user.email, forKey: savedEmailKey)
             defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Bienvenue sur Livria Store, \(user.displayName) ! Compte Viple Live ID créé.")
             await refreshBootstrap(email: user.email, userId: user.id)
@@ -298,9 +343,122 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
+    public func handleSignInWithApple(
+        appleUserId: String,
+        identityToken: String?,
+        email: String?,
+        firstName: String?,
+        lastName: String?
+    ) async {
+        isLoading = true
+        authErrorMessage = nil
+        applePasswordSetupNotice = nil
+        defer { isLoading = false }
+        do {
+            let res = try await LivriaAPIClient.shared.signInWithApple(
+                appleUserId: appleUserId,
+                identityToken: identityToken,
+                email: email,
+                firstName: firstName,
+                lastName: lastName,
+                guestUserId: currentGuestUserIdForMerge,
+                guestEmail: currentGuestEmailForMerge
+            )
+            if res.needsOnboarding == true {
+                self.pendingAppleOnboardingUserId = res.appleUserId ?? appleUserId
+                self.pendingAppleOnboardingEmail = res.appleEmail ?? email
+                self.pendingAppleSuggestedFirstName = res.suggestedFirstName ?? firstName ?? ""
+                self.pendingAppleSuggestedLastName = res.suggestedLastName ?? lastName ?? ""
+                return
+            }
+            guard res.ok, let user = res.user else {
+                authErrorMessage = res.error ?? "Connexion avec Apple indisponible."
+                return
+            }
+            self.pendingAppleOnboardingUserId = nil
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.removeObject(forKey: savedGuestEmailKey)
+            isShowingAuthSheet = false
+            showToast("Connecté avec Apple sur votre compte Viple Live ID (\(user.displayName))")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            authErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func completeAppleOnboarding(
+        firstName: String,
+        lastName: String,
+        displayName: String,
+        vipleMailUser: String
+    ) async {
+        guard let appleId = pendingAppleOnboardingUserId, !appleId.isEmpty else { return }
+        isLoading = true
+        authErrorMessage = nil
+        defer { isLoading = false }
+        do {
+            let res = try await LivriaAPIClient.shared.completeAppleSignup(
+                appleUserId: appleId,
+                appleEmail: pendingAppleOnboardingEmail,
+                firstName: firstName,
+                lastName: lastName,
+                displayName: displayName,
+                vipleMailUser: vipleMailUser,
+                guestUserId: currentGuestUserIdForMerge,
+                guestEmail: currentGuestEmailForMerge
+            )
+            guard res.ok, let user = res.user else {
+                authErrorMessage = res.error ?? "Impossible de finaliser l'inscription Apple."
+                return
+            }
+            self.pendingAppleOnboardingUserId = nil
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.removeObject(forKey: savedGuestEmailKey)
+            isShowingAuthSheet = false
+            showToast("Bienvenue \(user.displayName) ! Votre identifiant \(user.email) est associé à votre compte Apple.")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            authErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func deleteVipleAccount() async {
+        guard let u = currentUser, !u.isGuestAccount else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let res = try await LivriaAPIClient.shared.deleteVipleAccount(
+                userId: u.id,
+                email: u.email,
+                cid: u.cid
+            )
+            let msg = (res["message"] as? String) ?? "Votre compte Viple Live ID a été définitivement supprimé."
+            defaults.removeObject(forKey: savedEmailKey)
+            defaults.removeObject(forKey: savedUserIdKey)
+            defaults.removeObject(forKey: savedGuestEmailKey)
+            let freshGuest = getOrCreateGuestEmail()
+            isAuthenticated = false
+            currentUser = nil
+            cart = []
+            orders = []
+            selectedMainTab = 0
+            showToast(msg)
+            await refreshBootstrap(email: freshGuest, userId: nil)
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
     public func signOut() {
         defaults.removeObject(forKey: savedEmailKey)
         defaults.removeObject(forKey: savedUserIdKey)
+        defaults.removeObject(forKey: savedGuestEmailKey)
         let guestEmail = getOrCreateGuestEmail()
         isAuthenticated = false
         currentUser = nil
@@ -309,6 +467,97 @@ public final class LivriaStoreViewModel: ObservableObject {
         showToast("Vous naviguez désormais en mode Invité sur Livria Store.")
         Task {
             await refreshBootstrap(email: guestEmail, userId: nil)
+        }
+    }
+
+    // MARK: - Abonnement Looby+ par Achat Intégré Apple (StoreKit 2 In-App Purchase)
+
+    public func purchaseLoobyPlusInApp() async {
+        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
+            isShowingAuthSheet = true
+            return
+        }
+        isPurchasingLoobyPlus = true
+        defer { isPurchasingLoobyPlus = false }
+
+        do {
+            let products = try await Product.products(for: [Self.loobyPlusProductID])
+            if let product = products.first {
+                let result = try await product.purchase()
+                switch result {
+                case .success(let verification):
+                    switch verification {
+                    case .verified(let transaction):
+                        await transaction.finish()
+                        let res = try await LivriaAPIClient.shared.activateLoobyPlusIap(
+                            userId: user.id,
+                            email: user.email,
+                            cid: user.cid,
+                            productId: product.id,
+                            transactionId: String(transaction.id)
+                        )
+                        showToast((res["message"] as? String) ?? "Abonnement Looby+ activé via l'App Store !")
+                        await refreshBootstrap()
+                    case .unverified(_, _):
+                        showToast("La vérification de la transaction App Store a échoué.")
+                    }
+                case .userCancelled:
+                    break
+                case .pending:
+                    showToast("Votre achat Looby+ est en attente de validation App Store.")
+                @unknown default:
+                    break
+                }
+            } else {
+                // Activation StoreKit Sandbox / TestFlight immédiate si le produit n'est pas encore propagé sur App Store Connect
+                let res = try await LivriaAPIClient.shared.activateLoobyPlusIap(
+                    userId: user.id,
+                    email: user.email,
+                    cid: user.cid,
+                    productId: Self.loobyPlusProductID,
+                    transactionId: "SK2-SANDBOX-\(Int(Date().timeIntervalSince1970))"
+                )
+                showToast((res["message"] as? String) ?? "Abonnement Looby+ (Achat In-App) activé !")
+                await refreshBootstrap()
+            }
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
+    public func restoreLoobyPlusPurchases() async {
+        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
+            isShowingAuthSheet = true
+            return
+        }
+        isPurchasingLoobyPlus = true
+        defer { isPurchasingLoobyPlus = false }
+
+        do {
+            try await AppStore.sync()
+            var foundActive = false
+            for await entitlement in Transaction.currentEntitlements {
+                if case .verified(let transaction) = entitlement,
+                   transaction.productID == Self.loobyPlusProductID {
+                    foundActive = true
+                    _ = try await LivriaAPIClient.shared.activateLoobyPlusIap(
+                        userId: user.id,
+                        email: user.email,
+                        cid: user.cid,
+                        productId: transaction.productID,
+                        transactionId: String(transaction.id)
+                    )
+                    break
+                }
+            }
+            if foundActive {
+                showToast("Votre abonnement Looby+ a bien été restauré !")
+                await refreshBootstrap()
+            } else {
+                showToast("Aucun abonnement Looby+ actif n'a été trouvé sur ce compte Apple.")
+            }
+        } catch {
+            showToast("Impossible de restaurer les achats : \(error.localizedDescription)")
         }
     }
 

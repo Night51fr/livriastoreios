@@ -27,6 +27,14 @@ public struct LivriaAuthResponse: Codable, Sendable {
     public var token: String?
     public var accountType: String?
     public var hasVipleMailBox: Bool?
+    public var requiresApplePasswordSetup: Bool?
+    public var icloudEmail: String?
+    public var vipleMailAddress: String?
+    public var needsOnboarding: Bool?
+    public var appleUserId: String?
+    public var appleEmail: String?
+    public var suggestedFirstName: String?
+    public var suggestedLastName: String?
     public var user: LivriaUserProfile?
 }
 
@@ -151,8 +159,31 @@ public struct LivriaBook: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var originalPrice: Double?
     public var stock: Int
     public var isActive: Bool
+    public var hasPaperback: Bool?
     public var hasEpub: Bool
     public var hasAudio: Bool
+
+    public var isPaperbackAvailable: Bool {
+        if let hp = hasPaperback { return hp }
+        return stock > 0 || (usedStock ?? 0) > 0 || (!hasEpub && !hasAudio)
+    }
+
+    public var availableFormats: [String] {
+        var list: [String] = []
+        if isPaperbackAvailable {
+            list.append("Broché")
+        }
+        if hasEpub {
+            list.append("Numérique")
+        }
+        if hasAudio {
+            list.append("Audio")
+        }
+        if list.isEmpty {
+            list.append("Broché")
+        }
+        return list
+    }
 
     // État Neuf / Occasion (synchronisé avec Wingman & Livria)
     public var condition: String?

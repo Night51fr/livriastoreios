@@ -86,11 +86,19 @@ public final class LivriaAPIClient {
 
     // MARK: - Authentification Native Viple Live ID
 
-    public func loginVipleLiveID(email: String, password: String) async throws -> LivriaAuthResponse {
-        try await postJSON("/auth/login", body: [
+    public func loginVipleLiveID(
+        email: String,
+        password: String,
+        guestUserId: Int? = nil,
+        guestEmail: String? = nil
+    ) async throws -> LivriaAuthResponse {
+        var payload: [String: Any] = [
             "email": email,
             "password": password
-        ])
+        ]
+        if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
+        if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
+        return try await postJSON("/auth/login", body: payload)
     }
 
     /// Inscription Viple Live ID : `emailMode` = `"viplemail"` (`@viplemail.fr`) ou `"custom"` (email externe)
@@ -101,9 +109,11 @@ public final class LivriaAPIClient {
         password: String,
         firstName: String,
         lastName: String,
-        displayName: String
+        displayName: String,
+        guestUserId: Int? = nil,
+        guestEmail: String? = nil
     ) async throws -> LivriaAuthResponse {
-        try await postJSON("/auth/register", body: [
+        var payload: [String: Any] = [
             "emailMode": emailMode,
             "emailUser": emailUser,
             "emailDomain": "viplemail.fr",
@@ -113,7 +123,75 @@ public final class LivriaAPIClient {
             "firstName": firstName,
             "lastName": lastName,
             "displayName": displayName
-        ])
+        ]
+        if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
+        if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
+        return try await postJSON("/auth/register", body: payload)
+    }
+
+    /// Sign in with Apple — Étape 1 (Connexion directe ou demande d'onboarding @viplemail.fr)
+    public func signInWithApple(
+        appleUserId: String,
+        identityToken: String?,
+        email: String?,
+        firstName: String?,
+        lastName: String?,
+        guestUserId: Int? = nil,
+        guestEmail: String? = nil
+    ) async throws -> LivriaAuthResponse {
+        var payload: [String: Any] = ["appleUserId": appleUserId]
+        if let identityToken { payload["identityToken"] = identityToken }
+        if let email { payload["email"] = email }
+        if let firstName { payload["firstName"] = firstName }
+        if let lastName { payload["lastName"] = lastName }
+        if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
+        if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
+        return try await postJSON("/auth/apple", body: payload)
+    }
+
+    /// Sign in with Apple — Étape 2 (Inscription uniquement : Nom, Prénom, Pseudo & @viplemail.fr obligatoire)
+    public func completeAppleSignup(
+        appleUserId: String,
+        appleEmail: String?,
+        firstName: String,
+        lastName: String,
+        displayName: String,
+        vipleMailUser: String,
+        guestUserId: Int? = nil,
+        guestEmail: String? = nil
+    ) async throws -> LivriaAuthResponse {
+        var payload: [String: Any] = [
+            "appleUserId": appleUserId,
+            "appleEmail": appleEmail ?? "",
+            "firstName": firstName,
+            "lastName": lastName,
+            "displayName": displayName,
+            "vipleMailUser": vipleMailUser
+        ]
+        if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
+        if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
+        return try await postJSON("/auth/apple-complete", body: payload)
+    }
+
+    /// Suppression définitive du compte Viple Live ID
+    public func deleteVipleAccount(userId: Int?, email: String?, cid: String?) async throws -> [String: Any] {
+        var payload: [String: Any] = [:]
+        if let userId { payload["userId"] = userId }
+        if let email { payload["email"] = email }
+        if let cid { payload["cid"] = cid }
+        return try await postRaw("/auth/delete-account", body: payload)
+    }
+
+    /// Activation de l'abonnement Looby+ suite à un achat In-App StoreKit 2
+    public func activateLoobyPlusIap(userId: Int?, email: String?, cid: String?, productId: String, transactionId: String) async throws -> [String: Any] {
+        var payload: [String: Any] = [
+            "productId": productId,
+            "transactionId": transactionId
+        ]
+        if let userId { payload["userId"] = userId }
+        if let email { payload["email"] = email }
+        if let cid { payload["cid"] = cid }
+        return try await postRaw("/loobyplus/activate-iap", body: payload)
     }
 
     // MARK: - Bootstrap, Boutique, Recherche ISBN & Membres

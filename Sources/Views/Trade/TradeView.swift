@@ -50,42 +50,46 @@ public struct TradeView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     tradeHeaderBanner
 
-                    HStack {
-                        Picker("Section Troc", selection: $selectedSection) {
-                            ForEach(TradeSection.allCases, id: \.self) { s in
-                                Text(s.rawValue).tag(s)
+                    if !store.isAuthenticated {
+                        guestRestrictedCard
+                    } else {
+                        HStack {
+                            Picker("Section Troc", selection: $selectedSection) {
+                                ForEach(TradeSection.allCases, id: \.self) { s in
+                                    Text(s.rawValue).tag(s)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            Button {
+                                showingNewOfferSheet = true
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 30))
+                                    .foregroundStyle(LivriaPalette.primary)
                             }
                         }
-                        .pickerStyle(.segmented)
 
-                        Button {
-                            showingNewOfferSheet = true
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 30))
-                                .foregroundStyle(LivriaPalette.primary)
+                        if selectedSection == .market {
+                            HStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(LivriaPalette.primary)
+                                TextField("Chercher un livre proposé au troc, auteur, souhait...", text: $searchQuery)
+                                    .textInputAutocapitalization(.never)
+                            }
+                            .padding(11)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.cardPaper))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaPalette.border, lineWidth: 1))
                         }
-                    }
 
-                    if selectedSection == .market {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(LivriaPalette.primary)
-                            TextField("Chercher un livre proposé au troc, auteur, souhait...", text: $searchQuery)
-                                .textInputAutocapitalization(.never)
+                        switch selectedSection {
+                        case .market:
+                            openOffersList
+                        case .myOffers:
+                            myOffersList
+                        case .myRequests:
+                            myRequestsList
                         }
-                        .padding(11)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.cardPaper))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaPalette.border, lineWidth: 1))
-                    }
-
-                    switch selectedSection {
-                    case .market:
-                        openOffersList
-                    case .myOffers:
-                        myOffersList
-                    case .myRequests:
-                        myRequestsList
                     }
                 }
                 .padding(16)
@@ -94,13 +98,15 @@ public struct TradeView: View {
             .navigationTitle("Troc de Livres")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingNewOfferSheet = true
-                    } label: {
-                        Label("Publier", systemImage: "plus.circle.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(LivriaPalette.primary)
+                if store.isAuthenticated {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showingNewOfferSheet = true
+                        } label: {
+                            Label("Publier", systemImage: "plus.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(LivriaPalette.primary)
+                        }
                     }
                 }
             }
@@ -114,6 +120,53 @@ public struct TradeView: View {
                 proposeTradeSheet(offer: offer)
             }
         }
+    }
+
+    private var guestRestrictedCard: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(LivriaPalette.primarySoft)
+                    .frame(width: 68, height: 68)
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+
+            Text("Connexion requise pour l'Espace Troc")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+                .multilineTextAlignment(.center)
+
+            Text("En mode invité (hors connexion), seuls vos Commandes, les Points Relais et le Scan ISBN sont accessibles. Connectez-vous ou créez votre compte Viple Live ID pour échanger vos livres avec la communauté.")
+                .font(.system(size: 13.5))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .multilineTextAlignment(.center)
+
+            Button {
+                store.isShowingAuthSheet = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                    Text("Se connecter / Créer un compte Viple Live ID")
+                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [LivriaPalette.primary, LivriaPalette.coral],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity)
+        .livriaCard()
     }
 
     private var tradeHeaderBanner: some View {

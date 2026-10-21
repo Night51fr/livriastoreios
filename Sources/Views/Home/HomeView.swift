@@ -73,17 +73,10 @@ public struct HomeView: View {
                 .padding(.vertical, 14)
             }
             .livriaThemedBackground(store.currentThemeId)
-            .navigationTitle("Livria Store")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "books.vertical.fill")
-                            .foregroundStyle(LivriaPalette.primary)
-                        Text("Livria Store")
-                            .font(.system(size: 19, weight: .black, design: .serif))
-                            .foregroundStyle(LivriaPalette.ink)
-                    }
+                ToolbarItem(placement: .principal) {
+                    LivriaStoreHorizontalLogoView()
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
@@ -424,7 +417,11 @@ public struct HomeView: View {
 
     private var loobyPlusPromoBanner: some View {
         Button {
-            store.selectedMainTab = 3
+            if store.isAuthenticated {
+                store.selectedMainTab = 3
+            } else {
+                store.isShowingAuthSheet = true
+            }
         } label: {
             HStack(spacing: 14) {
                 ZStack {
@@ -471,7 +468,11 @@ public struct HomeView: View {
 
     private var tradeCommunityBanner: some View {
         Button {
-            store.selectedMainTab = 2
+            if store.isAuthenticated {
+                store.selectedMainTab = 2
+            } else {
+                store.isShowingAuthSheet = true
+            }
         } label: {
             HStack(spacing: 14) {
                 ZStack {
@@ -629,5 +630,56 @@ public struct HomeView: View {
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LivriaPalette.cardPaper))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
+    }
+}
+
+// MARK: - Logo Horizontal Officiel « Livria Store » (Fond Transparent • Couleurs identiques aux logos Livria)
+
+public struct LivriaStoreHorizontalLogoView: View {
+    public init() {}
+
+    public var body: some View {
+        if let uiImage = UIImage(named: "LivriaStoreLogoHorizontal") {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(height: 28)
+                .accessibilityLabel("Livria Store")
+        } else {
+            HStack(spacing: 6) {
+                Text("Livria")
+                    .font(.system(size: 21, weight: .black, design: .serif))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.486, green: 0.302, blue: 1.0),
+                                Color(red: 0.925, green: 0.282, blue: 0.600)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                Text("STORE")
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .tracking(1.4)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.486, green: 0.302, blue: 1.0),
+                                        Color(red: 0.925, green: 0.282, blue: 0.600)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+                    .foregroundStyle(.white)
+            }
+            .accessibilityLabel("Livria Store")
+        }
     }
 }

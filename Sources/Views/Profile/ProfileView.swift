@@ -17,6 +17,7 @@ public struct ProfileView: View {
     @State private var address: String = ""
     @State private var postalCode: String = ""
     @State private var city: String = ""
+    @State private var showingDeleteAccountConfirmation: Bool = false
 
     public init() {}
 
@@ -24,12 +25,15 @@ public struct ProfileView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
-                    profileIdentityHeaderCard
-                    themePersonalizationStudioCard
-                    editProfileAndAddressCard
-                    legalTermsReviewCard
-                    if store.isAuthenticated {
+                    if !store.isAuthenticated {
+                        guestRestrictedProfileCard
+                    } else {
+                        profileIdentityHeaderCard
+                        themePersonalizationStudioCard
+                        editProfileAndAddressCard
+                        legalTermsReviewCard
                         signOutCard
+                        deleteAccountCard
                     }
                 }
                 .padding(16)
@@ -40,7 +44,64 @@ public struct ProfileView: View {
             .onAppear {
                 populateFieldsFromStore()
             }
+            .alert("Êtes-vous sûr de vouloir supprimer votre compte Viple Live ID ?", isPresented: $showingDeleteAccountConfirmation) {
+                Button("Annuler", role: .cancel) {}
+                Button("Oui, supprimer définitivement", role: .destructive) {
+                    Task {
+                        _ = await store.deleteVipleAccount()
+                    }
+                }
+            } message: {
+                Text("Êtes-vous sûr de vouloir supprimer définitivement votre compte Viple Live ID ? Cette action est irréversible et entraînera la suppression de votre profil et de vos données associées.")
+            }
         }
+    }
+
+    private var guestRestrictedProfileCard: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(LivriaPalette.primarySoft)
+                    .frame(width: 68, height: 68)
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+
+            Text("Connexion requise pour Mon Profil")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+                .multilineTextAlignment(.center)
+
+            Text("En mode invité (hors connexion), seuls Mes Commandes, les Points Relais et le Scan ISBN sont accessibles. Connectez-vous à votre compte Viple Live ID pour accéder à votre profil.")
+                .font(.system(size: 13.5))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .multilineTextAlignment(.center)
+
+            Button {
+                store.isShowingAuthSheet = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                    Text("Se connecter / Créer un compte Viple Live ID")
+                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [LivriaPalette.primary, LivriaPalette.coral],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity)
+        .livriaCard()
     }
 
     // MARK: - En-tête Profil avec LevelRing Circulaire & Badge Viple Live ID
@@ -305,6 +366,23 @@ public struct ProfileView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color.red.opacity(0.12)))
+            .foregroundStyle(.red)
+        }
+    }
+
+    private var deleteAccountCard: some View {
+        Button(role: .destructive) {
+            showingDeleteAccountConfirmation = true
+        } label: {
+            HStack {
+                Image(systemName: "trash.fill")
+                Text("Supprimer mon compte Viple Live ID")
+                    .font(.system(size: 14.5, weight: .bold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.red.opacity(0.20)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.red.opacity(0.45), lineWidth: 1))
             .foregroundStyle(.red)
         }
     }

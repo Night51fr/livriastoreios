@@ -1,0 +1,63 @@
+{
+  "identifier" : "E4C9A1D0-2026-4B8F-9A12-682515974301",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6825159743",
+    "_developerTeamID" : "VIPLE2026",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "fr_FR",
+    "_storefront" : "FRA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21506825",
+      "localizations" : [
+        {
+          "description" : "Abonnement mensuel au Club Looby+ de Livria Store",
+          "displayName" : "Club Looby+",
+          "locale" : "fr"
+        }
+      ],
+      "name" : "Club Looby+",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "3.50",
+          "familyShareable" : true,
+          "groupNumber" : 1,
+          "internalID" : "6825159744",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Livraison UPS 0 €, 1 livre audio offert/mois, Box Surprise, Partage Familial & 5% de cagnotte",
+              "displayName" : "Abonnement Looby+ Mensuel",
+              "locale" : "fr"
+            }
+          ],
+          "productID" : "store.livria.loobyplus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Looby+ Mensuel (3,50 €/mois)",
+          "subscriptionGroupID" : "21506825",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

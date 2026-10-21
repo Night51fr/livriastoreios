@@ -1,6 +1,7 @@
 import SwiftUI
+import AuthenticationServices
 
-// MARK: - Écran d'Authentification Native Viple Live ID (Connexion, Inscription @viplemail.fr / Email Externe & Mode Invité)
+// MARK: - Écran d'Authentification Native Viple Live ID (Connexion, Inscription @viplemail.fr / Email Externe, Sign in with Apple & Mode Invité)
 
 public struct VipleLiveAuthView: View {
     @Environment(\.dismiss) private var dismiss
@@ -31,6 +32,12 @@ public struct VipleLiveAuthView: View {
     @State private var displayName: String = ""
     @State private var localValidationError: String? = nil
 
+    // Finalisation d'inscription Sign in with Apple (Nom, Prénom, Pseudo, Adresse @viplemail.fr obligatoire)
+    @State private var appleFirstName: String = ""
+    @State private var appleLastName: String = ""
+    @State private var appleDisplayName: String = ""
+    @State private var appleViplemailUser: String = ""
+
     public init() {}
 
     public var body: some View {
@@ -49,16 +56,37 @@ public struct VipleLiveAuthView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
                     headerBranding
-                    modePickerCard
-                    if selectedTab == .login {
-                        loginFormCard
+                    if store.pendingAppleOnboardingUserId != nil {
+                        applePostSignupOnboardingCard
                     } else {
-                        registerFormCard
+                        modePickerCard
+                        appleSignInCard
+                        if selectedTab == .login {
+                            loginFormCard
+                        } else {
+                            registerFormCard
+                        }
+                        guestContinueCard
                     }
-                    guestContinueCard
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
+            }
+        }
+        .onChange(of: store.pendingAppleOnboardingUserId) { _, newValue in
+            if newValue != nil {
+                appleFirstName = store.pendingAppleFirstName
+                appleLastName = store.pendingAppleLastName
+                let suggestedDisplay = "\(store.pendingAppleFirstName) \(store.pendingAppleLastName)".trimmingCharacters(in: .whitespaces)
+                appleDisplayName = suggestedDisplay
+                if appleViplemailUser.isEmpty, !suggestedDisplay.isEmpty {
+                    let clean = suggestedDisplay
+                        .folding(options: .diacriticInsensitive, locale: .current)
+                        .lowercased()
+                        .replacingOccurrences(of: " ", with: ".")
+                        .filter { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" }
+                    appleViplemailUser = clean
+                }
             }
         }
     }
@@ -150,6 +178,146 @@ public struct VipleLiveAuthView: View {
         .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
     }
 
+    // MARK: - Sign in with Apple & Finalisation @viplemail.fr
+
+    private var appleSignInCard: some View {
+        VStack(spacing: 10) {
+            SignInWithAppleButton(.continue) { request in
+                request.requestedScopes = [.fullName, .email]
+            } onCompletion: { result in
+                handleAppleSignInResult(result)
+            }
+            .signInWithAppleButtonStyle(.black)
+            .frame(height: 50)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Text("Connectez-vous ou inscrivez-vous en 1 toucher avec votre compte Apple associé à Viple Live ID.")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .multilineTextAlignment(.center)
+        }
+        .livriaCard(cornerRadius: 20, padding: 16)
+    }
+
+    private var applePostSignupOnboardingCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "apple.logo")
+                    .font(.title2)
+                    .foregroundStyle(LivriaPalette.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Finalisez votre compte Viple Live ID")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                    Text("Inscription via Sign in with Apple • Choix de votre adresse @viplemail.fr")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.primary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "laptopcomputer.and.iphone")
+                        .foregroundStyle(LivriaPalette.primary)
+                        .font(.system(size: 15, weight: .bold))
+                    Text("Pourquoi choisir une adresse @viplemail.fr ? Cet identifiant Viple Live ID vous permet de vous connecter depuis n'importe quel autre appareil non Apple (PC, web, Android), tandis que sur vos appareils Apple votre compte Viple Live ID reste associé à votre compte Apple.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LivriaPalette.ink)
+                }
+
+                Divider()
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "icloud.and.arrow.down.fill")
+                        .foregroundStyle(LivriaPalette.coral)
+                        .font(.system(size: 15, weight: .bold))
+                    Text("Pour rendre votre expérience plus simple et plus rapide, aucun mot de passe ne vous est demandé maintenant. Le jour où vous souhaiterez vous connecter avec votre identifiant @viplemail.fr depuis un autre appareil sans avoir encore créé de mot de passe, entrez simplement votre adresse @viplemail.fr sans mot de passe : un e-mail sera automatiquement envoyé sur votre boîte mail iCloud avec un lien pour créer votre mot de passe.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+            }
+            .padding(13)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.primarySoft.opacity(0.55)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaPalette.primary.opacity(0.3), lineWidth: 1))
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Prénom")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.ink)
+                    TextField("Votre prénom", text: $appleFirstName)
+                        .padding(11)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.background))
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Nom")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.ink)
+                    TextField("Votre nom", text: $appleLastName)
+                        .padding(11)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.background))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Pseudo / Nom d'affichage")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.ink)
+                TextField("Votre pseudo sur Livria", text: $appleDisplayName)
+                    .padding(11)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.background))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Choisissez votre identifiant @viplemail.fr (obligatoire)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(LivriaPalette.ink)
+                HStack(spacing: 6) {
+                    TextField("prenom.nom", text: $appleViplemailUser)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.background))
+                    Text("@viplemail.fr")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.primary))
+                }
+            }
+
+            errorBanner
+
+            Button {
+                submitAppleOnboarding()
+            } label: {
+                HStack(spacing: 10) {
+                    if store.isLoading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "checkmark.seal.fill")
+                    }
+                    Text("Valider mon identifiant @viplemail.fr")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(
+                    LinearGradient(
+                        colors: [LivriaPalette.primary, LivriaPalette.coral],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .disabled(store.isLoading)
+        }
+        .livriaCard(cornerRadius: 22, padding: 20)
+    }
+
     // MARK: - Formulaire de Connexion Viple Live ID
 
     private var loginFormCard: some View {
@@ -186,8 +354,8 @@ public struct VipleLiveAuthView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Mot de passe")
-                    .font(.system(size: 13, weight: .semibold))
+                Text("Mot de passe (laissez vide si inscrit avec Apple sans mot de passe)")
+                    .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(LivriaPalette.ink)
                 HStack {
                     Image(systemName: "lock.fill")
@@ -197,6 +365,26 @@ public struct VipleLiveAuthView: View {
                 .padding(13)
                 .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaPalette.border, lineWidth: 1))
+            }
+
+            if let notice = store.applePasswordSetupNotice, !notice.isEmpty {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "icloud.fill")
+                        .font(.title3)
+                        .foregroundStyle(LivriaPalette.primary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Vérifiez votre boîte mail iCloud")
+                            .font(.system(size: 13.5, weight: .bold))
+                            .foregroundStyle(LivriaPalette.ink)
+                        Text(notice)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                    }
+                }
+                .padding(13)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primarySoft))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaPalette.primary.opacity(0.4), lineWidth: 1))
             }
 
             errorBanner
@@ -501,6 +689,70 @@ public struct VipleLiveAuthView: View {
                 displayName: finalDisplay.isEmpty ? "Membre Viple Live ID" : finalDisplay
             )
             if store.isAuthenticated {
+                dismiss()
+            }
+        }
+    }
+
+    private func handleAppleSignInResult(_ result: Result<ASAuthorization, any Error>) {
+        localValidationError = nil
+        switch result {
+        case .success(let auth):
+            guard let cred = auth.credential as? ASAuthorizationAppleIDCredential else {
+                localValidationError = "Impossible de lire les informations Apple."
+                return
+            }
+            let appleUserId = cred.user
+            let email = cred.email
+            let givenName = cred.fullName?.givenName
+            let familyName = cred.fullName?.familyName
+            var tokenString: String? = nil
+            if let tokenData = cred.identityToken {
+                tokenString = String(data: tokenData, encoding: .utf8)
+            }
+            Task {
+                await store.handleSignInWithApple(
+                    appleUserId: appleUserId,
+                    email: email,
+                    firstName: givenName,
+                    lastName: familyName,
+                    identityToken: tokenString
+                )
+                if store.isAuthenticated && store.pendingAppleOnboardingUserId == nil {
+                    dismiss()
+                }
+            }
+        case .failure(let error):
+            localValidationError = "Connexion Apple annulée ou indisponible (\(error.localizedDescription))."
+        }
+    }
+
+    private func submitAppleOnboarding() {
+        localValidationError = nil
+        let cleanFirst = appleFirstName.trimmingCharacters(in: .whitespaces)
+        let cleanLast = appleLastName.trimmingCharacters(in: .whitespaces)
+        let cleanDisplay = appleDisplayName.trimmingCharacters(in: .whitespaces)
+        let cleanUser = appleViplemailUser.trimmingCharacters(in: .whitespaces)
+        if cleanFirst.isEmpty || cleanLast.isEmpty {
+            localValidationError = "Veuillez renseigner votre nom et votre prénom."
+            return
+        }
+        if cleanDisplay.isEmpty {
+            localValidationError = "Veuillez choisir votre pseudo."
+            return
+        }
+        if cleanUser.isEmpty {
+            localValidationError = "Veuillez choisir votre identifiant @viplemail.fr."
+            return
+        }
+        Task {
+            await store.completeAppleOnboarding(
+                firstName: cleanFirst,
+                lastName: cleanLast,
+                displayName: cleanDisplay,
+                viplemailUser: cleanUser
+            )
+            if store.isAuthenticated && store.pendingAppleOnboardingUserId == nil {
                 dismiss()
             }
         }

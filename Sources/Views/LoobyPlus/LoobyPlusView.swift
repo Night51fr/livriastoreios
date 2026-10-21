@@ -23,7 +23,9 @@ public struct LoobyPlusView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
-                    if isSubscribed {
+                    if !store.isAuthenticated {
+                        guestRestrictedCard
+                    } else if isSubscribed {
                         subscriberDashboardContent
                     } else {
                         subscribeShowcaseContent
@@ -48,11 +50,55 @@ public struct LoobyPlusView: View {
         }
     }
 
-    // MARK: - 1. Page de Présentation & Souscription Looby+ (3,50 €/mois) pour les Non-Abonnés
+    // MARK: - 0. Accès Réservé aux Comptes Connectés Viple Live ID
+
+    private var guestRestrictedCard: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(LivriaPalette.goldSoft)
+                    .frame(width: 68, height: 68)
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(LivriaPalette.gold)
+            }
+
+            Text("Compte requis pour Looby+")
+                .font(.system(size: 21, weight: .black, design: .serif))
+                .foregroundStyle(LivriaPalette.ink)
+                .multilineTextAlignment(.center)
+
+            Text("Pour souscrire à l'abonnement Looby+ (en achat intégré In-App) et profiter de la livraison offerte, du livre audio mensuel et du partage familial, connectez-vous ou créez gratuitement votre compte Viple Live ID.")
+                .font(.system(size: 13.5))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .multilineTextAlignment(.center)
+
+            Button {
+                store.isShowingAuthSheet = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.key.fill")
+                    Text("Se connecter ou créer un compte")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(LivriaPalette.heroGradient)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(22)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(LivriaPalette.cardPaper))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
+    }
+
+    // MARK: - 1. Page de Présentation & Souscription Looby+ In-App (3,50 €/mois) pour les Non-Abonnés
 
     private var subscribeShowcaseContent: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Hero Carte 3,50 €/mois
+            // Hero Carte 3,50 €/mois (Achat In-App StoreKit 2)
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Label("ABONNEMENT LOOBY+", systemImage: "crown.fill")
@@ -62,7 +108,7 @@ public struct LoobyPlusView: View {
                         .background(Capsule().fill(LivriaPalette.gold))
                         .foregroundStyle(.black)
                     Spacer()
-                    Text("Sans engagement")
+                    Text("Achat intégré App Store")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.85))
                 }
@@ -75,7 +121,7 @@ public struct LoobyPlusView: View {
                     Text("3,50 €")
                         .font(.system(size: 38, weight: .black, design: .rounded))
                         .foregroundStyle(LivriaPalette.gold)
-                    Text("/ mois • Activation immédiate")
+                    Text("/ mois • Sans engagement")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                 }
@@ -83,12 +129,17 @@ public struct LoobyPlusView: View {
                 VStack(spacing: 10) {
                     Button {
                         Task {
-                            await store.addLoobyPlusSubscriptionToCart(openCheckoutImmediately: true)
+                            await store.purchaseLoobyPlusInApp()
                         }
                     } label: {
-                        HStack {
-                            Image(systemName: "bolt.shield.fill")
-                            Text("Souscrire maintenant (3,50 €)")
+                        HStack(spacing: 8) {
+                            if store.isPurchasingLoobyPlus {
+                                ProgressView()
+                                    .tint(.black)
+                            } else {
+                                Image(systemName: "apple.logo")
+                            }
+                            Text("S'abonner dans l'app (3,50 € / mois)")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                         }
                         .frame(maxWidth: .infinity)
@@ -97,24 +148,26 @@ public struct LoobyPlusView: View {
                         .foregroundStyle(.black)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .disabled(store.isPurchasingLoobyPlus)
 
                     Button {
                         Task {
-                            await store.addLoobyPlusSubscriptionToCart(openCheckoutImmediately: false)
+                            await store.restoreLoobyPlusPurchases()
                         }
                     } label: {
-                        HStack {
-                            Image(systemName: "cart.badge.plus")
-                            Text("Ajouter Looby+ à mon panier (3,50 €)")
-                                .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                            Text("Restaurer mon abonnement App Store")
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 11)
                         .background(Color.white.opacity(0.16))
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.35), lineWidth: 1))
                     }
+                    .disabled(store.isPurchasingLoobyPlus)
                 }
             }
             .padding(20)

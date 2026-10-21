@@ -7,6 +7,7 @@ public struct BookDetailView: View {
     @StateObject private var ambientPlayer = LivriaAmbientSoundPlayer()
     public let book: LivriaBook
 
+    @State private var detailedBook: LivriaBook?
     @State private var selectedFormat: String = "Broché"
     @State private var selectedConditionIsUsed: Bool = false
     @State private var reviews: [LivriaBookReview] = []
@@ -17,7 +18,12 @@ public struct BookDetailView: View {
 
     public init(book: LivriaBook) {
         self.book = book
+        _selectedFormat = State(initialValue: book.availableFormats.first ?? "Broché")
         _selectedConditionIsUsed = State(initialValue: !book.hasNewStock && book.hasUsedStock)
+    }
+
+    private var currentBook: LivriaBook {
+        detailedBook ?? book
     }
 
     private var activeCartFormat: String {
@@ -139,17 +145,23 @@ public struct BookDetailView: View {
 
     private var formatAndConditionSelectorCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("1. Choisir le format")
+            Text(currentBook.availableFormats.count > 1 ? "1. Choisir le format" : "Format disponible")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundStyle(LivriaPalette.ink)
 
             HStack(spacing: 10) {
-                formatButton(format: "Broché", icon: "book.closed.fill", subtitle: "Livraison UPS / Relais")
-                formatButton(format: "Numérique", icon: "ipad", subtitle: "Édition numérique")
-                formatButton(format: "Audio", icon: "headphones", subtitle: "Livre audio narré")
+                if currentBook.isPaperbackAvailable {
+                    formatButton(format: "Broché", icon: "book.closed.fill", subtitle: "Livraison UPS / Relais")
+                }
+                if currentBook.hasEpub {
+                    formatButton(format: "Numérique", icon: "ipad", subtitle: "Édition numérique")
+                }
+                if currentBook.hasAudio {
+                    formatButton(format: "Audio", icon: "headphones", subtitle: "Livre audio narré")
+                }
             }
 
-            if selectedFormat == "Broché" {
+            if selectedFormat == "Broché" && currentBook.isPaperbackAvailable {
                 Divider()
 
                 Text("2. Choisir l'état de l'ouvrage papier")
@@ -157,22 +169,22 @@ public struct BookDetailView: View {
                     .foregroundStyle(LivriaPalette.ink)
 
                 HStack(spacing: 10) {
-                    if book.hasNewStock {
+                    if currentBook.hasNewStock {
                         conditionChoiceCard(
                             isUsed: false,
                             badge: "✨ Neuf",
-                            subtitle: "Exemplaire neuf (\(max(book.stock, 1)) en stock)",
-                            price: book.price,
+                            subtitle: "Exemplaire neuf (\(max(currentBook.stock, 1)) en stock)",
+                            price: currentBook.price,
                             accent: LivriaPalette.primary
                         )
                     }
 
-                    if book.hasUsedStock {
+                    if currentBook.hasUsedStock {
                         conditionChoiceCard(
                             isUsed: true,
-                            badge: "♻️ \(book.usedConditionLabel)",
-                            subtitle: "Exemplaire contrôlé et garanti (\(book.usedStock ?? 1) en stock)",
-                            price: book.effectiveUsedPrice,
+                            badge: "♻️ \(currentBook.usedConditionLabel)",
+                            subtitle: "Exemplaire contrôlé et garanti (\(currentBook.usedStock ?? 1) en stock)",
+                            price: currentBook.effectiveUsedPrice,
                             accent: LivriaPalette.usedAmber
                         )
                     }
@@ -298,7 +310,11 @@ public struct BookDetailView: View {
                 }
 
                 Button {
-                    store.selectedMainTab = 2
+                    if store.isAuthenticated {
+                        store.selectedMainTab = 2
+                    } else {
+                        store.isShowingAuthSheet = true
+                    }
                 } label: {
                     Label("Chercher / Proposer en Troc", systemImage: "arrow.triangle.2.circlepath")
                         .font(.system(size: 12.5, weight: .bold))
@@ -462,6 +478,10 @@ public struct BookDetailView: View {
     private func loadBookDetails() async {
         do {
             let detail = try await LivriaAPIClient.shared.fetchBookDetails(bookId: book.id)
+            self.detailedBook = detail.book
+            if !detail.book.availableFormats.contains(self.selectedFormat) {
+                self.selectedFormat = detail.book.availableFormats.first ?? "Broché"
+            }
             self.reviews = detail.reviews
             self.similarBooks = detail.similar
             self.averageRating = detail.averageRating ?? 5.0

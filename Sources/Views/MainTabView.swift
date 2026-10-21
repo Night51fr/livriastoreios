@@ -52,6 +52,11 @@ public struct MainTabView: View {
                     .tag(4)
             }
             .tint(LivriaPalette.primary)
+            .onChange(of: store.selectedMainTab) { _, newTab in
+                if !store.isAuthenticated && (newTab == 2 || newTab == 3) {
+                    store.isShowingAuthSheet = true
+                }
+            }
 
             // Toast de notification flottant
             if let toast = store.activeToastMessage {
@@ -112,6 +117,7 @@ public struct LivriaStoreAccountHubView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
     @State private var showingISBNScanner: Bool = false
     @State private var scannedBookDestination: LivriaBook? = nil
+    @State private var showingDeleteAccountConfirmation: Bool = false
 
     public init() {}
 
@@ -127,14 +133,16 @@ public struct LivriaStoreAccountHubView: View {
 
                     bookstoreServicesSection
 
-                    appearanceAndThemeSection
+                    if store.isAuthenticated {
+                        appearanceAndThemeSection
+                    }
 
                     helpAndAccountSection
                 }
                 .padding(16)
             }
             .livriaThemedBackground(store.currentThemeId)
-            .navigationTitle("Mon Profil")
+            .navigationTitle(store.isAuthenticated ? "Mon Profil" : "Menu Invité")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $scannedBookDestination) { book in
                 BookDetailView(book: book)
@@ -144,6 +152,16 @@ public struct LivriaStoreAccountHubView: View {
                     scannedBookDestination = foundBook
                 }
                 .environmentObject(store)
+            }
+            .alert("Êtes-vous sûr de vouloir supprimer votre compte Viple Live ID ?", isPresented: $showingDeleteAccountConfirmation) {
+                Button("Annuler", role: .cancel) {}
+                Button("Oui, supprimer définitivement", role: .destructive) {
+                    Task {
+                        _ = await store.deleteVipleAccount()
+                    }
+                }
+            } message: {
+                Text("Êtes-vous sûr de vouloir supprimer définitivement votre compte Viple Live ID ? Cette action est irréversible et entraînera la suppression de votre compte et de vos données.")
             }
         }
     }
@@ -267,26 +285,28 @@ public struct LivriaStoreAccountHubView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    store.selectedMainTab = 2
-                } label: {
-                    shortcutTile(title: "Espace Troc", subtitle: "Échanges", icon: "arrow.triangle.2.circlepath", color: .purple)
-                }
-                .buttonStyle(.plain)
+                if store.isAuthenticated {
+                    Button {
+                        store.selectedMainTab = 2
+                    } label: {
+                        shortcutTile(title: "Espace Troc", subtitle: "Échanges", icon: "arrow.triangle.2.circlepath", color: .purple)
+                    }
+                    .buttonStyle(.plain)
 
-                Button {
-                    store.selectedMainTab = 3
-                } label: {
-                    shortcutTile(title: "Club Looby+", subtitle: "Avantages", icon: "crown.fill", color: LivriaPalette.gold)
-                }
-                .buttonStyle(.plain)
+                    Button {
+                        store.selectedMainTab = 3
+                    } label: {
+                        shortcutTile(title: "Club Looby+", subtitle: "Avantages", icon: "crown.fill", color: LivriaPalette.gold)
+                    }
+                    .buttonStyle(.plain)
 
-                NavigationLink {
-                    SupportAssistanceView()
-                } label: {
-                    shortcutTile(title: "Assistance", subtitle: "Service client", icon: "bubble.left.and.bubble.right.fill", color: LivriaPalette.primary)
+                    NavigationLink {
+                        SupportAssistanceView()
+                    } label: {
+                        shortcutTile(title: "Assistance", subtitle: "Service client", icon: "bubble.left.and.bubble.right.fill", color: LivriaPalette.primary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -344,13 +364,15 @@ public struct LivriaStoreAccountHubView: View {
                     RelayPointsView()
                 }
 
-                hubSectionLink(
-                    title: "Mon Adresse de Livraison & Coordonnées",
-                    subtitle: "Gérez votre adresse postale et votre numéro de téléphone pour vos colis",
-                    icon: "house.and.flag.fill",
-                    color: .indigo
-                ) {
-                    ProfileView()
+                if store.isAuthenticated {
+                    hubSectionLink(
+                        title: "Mon Adresse de Livraison & Coordonnées",
+                        subtitle: "Gérez votre adresse postale et votre numéro de téléphone pour vos colis",
+                        icon: "house.and.flag.fill",
+                        color: .indigo
+                    ) {
+                        ProfileView()
+                    }
                 }
             }
         }
@@ -377,29 +399,31 @@ public struct LivriaStoreAccountHubView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    store.selectedMainTab = 3
-                } label: {
-                    hubActionRow(
-                        title: "Abonnement Club Looby+ (3,50 €/mois)",
-                        subtitle: "Livraison 0 €, 1 livre audio offert par mois, 5% de cagnotte et partage familial",
-                        icon: "crown.fill",
-                        color: LivriaPalette.gold
-                    )
-                }
-                .buttonStyle(.plain)
+                if store.isAuthenticated {
+                    Button {
+                        store.selectedMainTab = 3
+                    } label: {
+                        hubActionRow(
+                            title: "Abonnement Club Looby+ (3,50 €/mois)",
+                            subtitle: "Livraison 0 €, 1 livre audio offert par mois, 5% de cagnotte et partage familial",
+                            icon: "crown.fill",
+                            color: LivriaPalette.gold
+                        )
+                    }
+                    .buttonStyle(.plain)
 
-                Button {
-                    store.selectedMainTab = 2
-                } label: {
-                    hubActionRow(
-                        title: "Mes Échanges & Espace Troc",
-                        subtitle: "Proposez vos livres lus et suivez vos demandes d'échange entre lecteurs",
-                        icon: "arrow.triangle.2.circlepath.circle.fill",
-                        color: .purple
-                    )
+                    Button {
+                        store.selectedMainTab = 2
+                    } label: {
+                        hubActionRow(
+                            title: "Mes Échanges & Espace Troc",
+                            subtitle: "Proposez vos livres lus et suivez vos demandes d'échange entre lecteurs",
+                            icon: "arrow.triangle.2.circlepath.circle.fill",
+                            color: .purple
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -496,13 +520,15 @@ public struct LivriaStoreAccountHubView: View {
                     SupportAssistanceView()
                 }
 
-                hubSectionLink(
-                    title: "Préférences & Profil Complet",
-                    subtitle: "Biographie de lecteur, objectif annuel de lecture et paramètres",
-                    icon: "person.text.rectangle.fill",
-                    color: LivriaPalette.primary
-                ) {
-                    ProfileView()
+                if store.isAuthenticated {
+                    hubSectionLink(
+                        title: "Préférences & Profil Complet",
+                        subtitle: "Biographie de lecteur, objectif annuel de lecture et paramètres",
+                        icon: "person.text.rectangle.fill",
+                        color: LivriaPalette.primary
+                    ) {
+                        ProfileView()
+                    }
                 }
 
                 Button {
@@ -533,6 +559,32 @@ public struct LivriaStoreAccountHubView: View {
                             Text("Se déconnecter de mon compte")
                                 .font(.system(size: 14.5, weight: .bold, design: .rounded))
                                 .foregroundStyle(.red)
+                            Spacer()
+                        }
+                        .livriaCard(padding: 12)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(role: .destructive) {
+                        showingDeleteAccountConfirmation = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color.red.opacity(0.22))
+                                    .frame(width: 44, height: 44)
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(.red)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Supprimer mon compte Viple Live ID")
+                                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.red)
+                                Text("Suppression définitive de votre compte et de vos données")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(LivriaPalette.inkMuted)
+                            }
                             Spacer()
                         }
                         .livriaCard(padding: 12)
