@@ -1,6 +1,6 @@
 import SwiftUI
-import WebKit
-import CoreLocation
+@preconcurrency import WebKit
+@preconcurrency import CoreLocation
 
 // MARK: - Feuille Web d'Approbation PayPal Sécurisée (WKWebView)
 
@@ -89,7 +89,8 @@ private struct PayPalWebViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency WKNavigationDelegate {
         let fallbackOrderId: String
         @Binding var isLoading: Bool
         let onApproved: (String) -> Void

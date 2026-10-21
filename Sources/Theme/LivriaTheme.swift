@@ -1,5 +1,5 @@
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 
 // MARK: - Convertisseur d'URL Livria Store (/covers/* -> https://livria.store/covers/*)
@@ -437,7 +437,7 @@ public struct LivriaBarcodeCameraView: UIViewControllerRepresentable {
         uiViewController.setTorch(torchEnabled)
     }
 
-    public final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    public final class ScannerViewController: UIViewController, @preconcurrency AVCaptureMetadataOutputObjectsDelegate {
         var onCodeScanned: ((String) -> Void)?
         var onCameraUnavailable: (() -> Void)?
 
@@ -543,7 +543,7 @@ public struct LivriaBarcodeCameraView: UIViewControllerRepresentable {
 
         private func startSession() {
             guard isConfigured, !captureSession.isRunning else { return }
-            let session = captureSession
+            nonisolated(unsafe) let session = captureSession
             DispatchQueue.global(qos: .userInitiated).async {
                 session.startRunning()
             }
@@ -551,7 +551,7 @@ public struct LivriaBarcodeCameraView: UIViewControllerRepresentable {
 
         private func stopSession() {
             guard captureSession.isRunning else { return }
-            let session = captureSession
+            nonisolated(unsafe) let session = captureSession
             DispatchQueue.global(qos: .userInitiated).async {
                 session.stopRunning()
             }

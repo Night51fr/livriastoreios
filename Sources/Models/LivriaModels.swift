@@ -278,6 +278,39 @@ public struct LivriaIsbnLookupResponse: Codable, Sendable {
         case ok, error, isbn, inCatalog, catalogBook, metadata
     }
 
+    public init(
+        ok: Bool = true,
+        error: String? = nil,
+        inCatalog: Bool = false,
+        isbn: String? = nil,
+        title: String? = nil,
+        author: String? = nil,
+        description: String? = nil,
+        coverUrl: String? = nil,
+        catalogBook: LivriaBook? = nil,
+        metadata: LivriaIsbnMetadata? = nil
+    ) {
+        self.ok = ok
+        self.error = error
+        self.isbn = isbn
+        self.inCatalog = inCatalog
+        self.catalogBook = catalogBook
+        if let metadata {
+            self.metadata = metadata
+        } else if title != nil || author != nil || description != nil || coverUrl != nil {
+            self.metadata = LivriaIsbnMetadata(
+                source: "LivriaCatalog",
+                title: title ?? catalogBook?.title ?? "",
+                author: author ?? catalogBook?.author ?? "",
+                coverUrl: coverUrl ?? catalogBook?.coverUrl ?? "",
+                description: description ?? catalogBook?.description ?? "",
+                genre: catalogBook?.genre ?? "Roman"
+            )
+        } else {
+            self.metadata = nil
+        }
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
@@ -290,6 +323,7 @@ public struct LivriaIsbnLookupResponse: Codable, Sendable {
 }
 
 public typealias LivriaISBNLookupResponse = LivriaIsbnLookupResponse
+public typealias LivriaMemberSummary = LivriaMemberSearchResult
 
 public struct LivriaMemberSearchResult: Codable, Identifiable, Equatable, Sendable {
     public var id: Int

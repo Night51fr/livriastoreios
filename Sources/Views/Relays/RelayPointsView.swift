@@ -1,6 +1,6 @@
 import SwiftUI
 import MapKit
-import CoreLocation
+@preconcurrency import CoreLocation
 
 // MARK: - Gestionnaire de Géolocalisation GPS (comme sur delivery.viplenetwork.com)
 

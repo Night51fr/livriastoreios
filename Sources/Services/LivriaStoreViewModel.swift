@@ -108,7 +108,7 @@ public final class LivriaStoreViewModel: ObservableObject {
 
     public var isBuyGodUser: Bool {
         guard let u = currentUser else { return false }
-        return u.isBuyGod || u.role.lowercased() == "buygod"
+        return (u.isBuyGod == true) || (u.role?.lowercased() == "buygod")
     }
 
     public var newestCatalogBooks: [LivriaBook] {
