@@ -29,6 +29,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000010000000000000001 /* Sources */,
+				AA0000100000000000000001 /* Assets.xcassets */,
 				AA0000040000000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -106,6 +107,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000110000000000000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -151,6 +153,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLE_APP_STORE_ID = 6825159743;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 27;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -176,6 +179,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLE_APP_STORE_ID = 6825159743;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 27;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -221,6 +225,8 @@
 /* End XCConfigurationList section */
 
 /* Begin PBXFileReference section */
+		AA0000110000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000100000000000000001 /* Assets.xcassets */; };
+		AA0000100000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000050000000000000001 /* Livria.app */ = {
 			isa = PBXFileReference;
 			explicitFileType = wrapper.application;
