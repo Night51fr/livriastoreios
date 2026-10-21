@@ -36,6 +36,7 @@ public struct MainTabView: View {
             if newPhase == .active {
                 Task {
                     await store.refreshPaymentSettings()
+                    await store.checkCrossAppVipleAccount()
                 }
             }
         }
@@ -107,6 +108,14 @@ public struct MainTabView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(99)
             }
+
+            // Proposition automatique de connexion Viple Live ID inter-applications (depuis Livria Social)
+            if store.isShowingCrossAppSSOPrompt, let account = store.detectedCrossAppAccount {
+                LivriaStoreCrossAppSSOPromptView(account: account)
+                    .environmentObject(store)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .zIndex(150)
+            }
         }
         .sheet(isPresented: $store.isShowingCartSheet) {
             CartView()
@@ -125,17 +134,200 @@ public struct MainTabView: View {
                 .environmentObject(store)
         }
         .sheet(item: $store.scannedBookForDetail) { scannedBook in
-            NavigationStack {
-                BookDetailView(book: scannedBook)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Fermer") {
-                                store.scannedBookForDetail = nil
+            ZStack {
+                NavigationStack {
+                    BookDetailView(book: scannedBook)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Fermer") {
+                                    store.scannedBookForDetail = nil
+                                }
                             }
                         }
-                    }
+                }
+
+                if store.isShowingCrossAppSSOPrompt, let account = store.detectedCrossAppAccount {
+                    LivriaStoreCrossAppSSOPromptView(account: account)
+                        .environmentObject(store)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .zIndex(150)
+                }
             }
             .environmentObject(store)
+        }
+    }
+}
+
+// MARK: - Proposition Automatique de Connexion Inter-Application (« Nous avons détecté que vous étiez connecté depuis Livria Social... »)
+
+public struct LivriaStoreCrossAppSSOPromptView: View {
+    @EnvironmentObject private var store: LivriaStoreViewModel
+    public let account: LivriaCrossAppAccount
+
+    public init(account: LivriaCrossAppAccount) {
+        self.account = account
+    }
+
+    private var fullNameLine: String {
+        let combined = "\(account.firstName) \(account.lastName)".trimmingCharacters(in: .whitespacesAndNewlines)
+        return combined
+    }
+
+    public var body: some View {
+        ZStack {
+            Color.black.opacity(0.56)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    store.dismissCrossAppPrompt()
+                }
+
+            VStack(spacing: 18) {
+                // Badge Viple Live ID Inter-Apps
+                HStack(spacing: 6) {
+                    Image(systemName: "person.badge.shield.checkmark.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                    Text("CONNEXION AUTOMATIQUE VIPLE LIVE ID")
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.primaryDeep)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(LivriaPalette.primarySoft))
+
+                // Texte exact demandé par l'utilisateur
+                VStack(spacing: 8) {
+                    Text("Nous avons détecté que vous étiez connecté depuis \(account.sourceApp)")
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                        .multilineTextAlignment(.center)
+
+                    Text("Souhaitez-vous vous connecter au même compte avec Livria Store ?")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 8)
+
+                // Carte Profil Viple (Photo de profil, Nom du compte, Nom/Prénom, Email, Niveau/XP, Badge Looby+)
+                HStack(spacing: 14) {
+                    LevelRingView(
+                        avatarUrl: account.avatarUrl,
+                        displayName: account.displayName,
+                        level: max(1, account.level),
+                        xp: max(0, account.xp),
+                        size: 68
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(account.displayName)
+                                .font(.system(size: 17, weight: .black, design: .rounded))
+                                .foregroundStyle(LivriaPalette.ink)
+                                .lineLimit(1)
+
+                            if account.isLivriaPlus {
+                                Label("Looby+", systemImage: "crown.fill")
+                                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(LivriaPalette.goldSoft))
+                                    .foregroundStyle(LivriaPalette.gold)
+                            }
+                        }
+
+                        if !fullNameLine.isEmpty && fullNameLine.lowercased() != account.displayName.lowercased() {
+                            Text(fullNameLine)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LivriaPalette.ink.opacity(0.85))
+                                .lineLimit(1)
+                        }
+
+                        Text(account.email)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                            .lineLimit(1)
+
+                        HStack(spacing: 8) {
+                            Label("Niveau \(max(1, account.level))", systemImage: "sparkles")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(LivriaPalette.primary)
+
+                            Text("•")
+                                .foregroundStyle(LivriaPalette.inkMuted)
+
+                            Text("\(max(0, account.xp)) XP")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(LivriaPalette.coral)
+                        }
+                        .padding(.top, 2)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(LivriaPalette.background)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(LivriaPalette.primary.opacity(0.22), lineWidth: 1.2)
+                )
+
+                // Boutons d'action
+                VStack(spacing: 10) {
+                    Button {
+                        Task {
+                            await store.acceptDetectedCrossAppAccount()
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            if store.isAcceptingCrossAppSSO {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                            }
+                            Text("Continuer en tant que \(account.displayName)")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                colors: [LivriaPalette.primary, LivriaPalette.coral],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: LivriaPalette.primary.opacity(0.32), radius: 10, x: 0, y: 4)
+                    }
+                    .disabled(store.isAcceptingCrossAppSSO)
+
+                    Button {
+                        store.dismissCrossAppPrompt()
+                    } label: {
+                        Text("Non merci, rester sur la session actuelle")
+                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .disabled(store.isAcceptingCrossAppSSO)
+                }
+            }
+            .padding(22)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(LivriaPalette.cardPaper)
+                    .shadow(color: Color.black.opacity(0.28), radius: 24, x: 0, y: 12)
+            )
+            .padding(.horizontal, 20)
         }
     }
 }

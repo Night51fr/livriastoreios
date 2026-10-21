@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Client Réseau REST Natif « Livria Store » (App Store ID : 6825159743 • iOS 18+ / iOS 26+)
 
@@ -7,6 +10,7 @@ public final class LivriaAPIClient {
     public static let shared = LivriaAPIClient()
 
     public let baseAPI = "https://livria.store/api/mobile/v1"
+    public let socialBaseAPI = "https://livriasocial.viplenetwork.com/api/mobile/v1"
     private let session: URLSession
     private let decoder: JSONDecoder
 
@@ -18,6 +22,19 @@ public final class LivriaAPIClient {
         cfg.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: cfg)
         self.decoder = JSONDecoder()
+    }
+
+    private func applyVipleDeviceHeaders(to req: inout URLRequest) {
+        req.setValue("Livria Store", forHTTPHeaderField: "X-Viple-App-Name")
+        #if canImport(UIKit)
+        if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
+            req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        }
+        let dev = UIDevice.current
+        let bounds = UIScreen.main.bounds
+        let deviceSignature = "\(dev.model)|\(dev.systemName)-\(dev.systemVersion)|\(Int(bounds.width))x\(Int(bounds.height))"
+        req.setValue(deviceSignature, forHTTPHeaderField: "X-Viple-Device-Info")
+        #endif
     }
 
     private func performRequest(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -62,6 +79,7 @@ public final class LivriaAPIClient {
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaStore-iOS/26.0 (AppID/\(LivriaAppConfig.appleAppId); iPhone; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
+        applyVipleDeviceHeaders(to: &req)
 
         let (data, http) = try await performRequest(req)
         if !(200...299).contains(http.statusCode) {
@@ -88,6 +106,7 @@ public final class LivriaAPIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaStore-iOS/26.0 (AppID/\(LivriaAppConfig.appleAppId); iPhone; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
+        applyVipleDeviceHeaders(to: &req)
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, http) = try await performRequest(req)
@@ -111,6 +130,7 @@ public final class LivriaAPIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaStore-iOS/26.0 (AppID/\(LivriaAppConfig.appleAppId); iPhone; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
+        applyVipleDeviceHeaders(to: &req)
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, http) = try await performRequest(req)
@@ -120,6 +140,52 @@ public final class LivriaAPIClient {
             throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         return dict
+    }
+
+    // MARK: - Viple Live ID Cross-App SSO (Livria Store <-> Livria Social)
+
+    public func discoverCrossAppAccount() async -> LivriaCrossAppAccount? {
+        let items = [URLQueryItem(name: "currentApp", value: "Livria Store")]
+        if let res: LivriaCrossAppDiscoverResponse = try? await getJSON("/sso/discover", queryItems: items),
+           res.hasAccount, let account = res.account {
+            return account
+        }
+        if let resSocial: LivriaCrossAppDiscoverResponse = try? await getJSON("\(socialBaseAPI)/sso/discover", queryItems: items),
+           resSocial.hasAccount, let account = resSocial.account {
+            return account
+        }
+        return nil
+    }
+
+    public func announceCrossAppSession(userId: Int, email: String) async {
+        let payload: [String: Any] = [
+            "appName": "Livria Store",
+            "userId": userId,
+            "email": email
+        ]
+        _ = try? await postRaw("/sso/announce", body: payload)
+        _ = try? await postRaw("\(socialBaseAPI)/sso/announce", body: payload)
+    }
+
+    public func clearCrossAppSession() async {
+        let payload: [String: Any] = ["appName": "Livria Store"]
+        _ = try? await postRaw("/sso/clear", body: payload)
+        _ = try? await postRaw("\(socialBaseAPI)/sso/clear", body: payload)
+    }
+
+    public func acceptCrossAppAccount(
+        userId: Int,
+        email: String,
+        guestUserId: Int? = nil,
+        guestEmail: String? = nil
+    ) async throws -> LivriaAuthResponse {
+        var payload: [String: Any] = [
+            "userId": userId,
+            "email": email
+        ]
+        if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
+        if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
+        return try await postJSON("/sso/accept", body: payload)
     }
 
     // MARK: - Authentification Native Viple Live ID

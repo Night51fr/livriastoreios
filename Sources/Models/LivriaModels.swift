@@ -38,6 +38,41 @@ public struct LivriaAuthResponse: Codable, Sendable {
     public var user: LivriaUserProfile?
 }
 
+public struct LivriaCrossAppAccount: Codable, Equatable, Sendable, Identifiable {
+    public var userId: Int
+    public var email: String
+    public var displayName: String
+    public var firstName: String
+    public var lastName: String
+    public var cid: String
+    public var avatarUrl: String
+    public var bio: String
+    public var isLivriaPlus: Bool
+    public var level: Int
+    public var xp: Int
+    public var sourceApp: String
+    public var targetApp: String
+
+    public var id: Int { userId }
+
+    public var fullNameOrDisplay: String {
+        let full = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespacesAndNewlines)
+        return full.isEmpty ? displayName : full
+    }
+
+    public var initials: String {
+        let parts = displayName.split(separator: " ").prefix(2)
+        let str = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return str.isEmpty ? "V" : str
+    }
+}
+
+public struct LivriaCrossAppDiscoverResponse: Codable, Sendable {
+    public var ok: Bool
+    public var hasDetectedAccount: Bool
+    public var account: LivriaCrossAppAccount?
+}
+
 public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
     public var paypalEnabled: Bool
     public var applePayEnabled: Bool

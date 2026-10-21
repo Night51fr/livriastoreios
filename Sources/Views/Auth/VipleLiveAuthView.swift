@@ -62,6 +62,9 @@ public struct VipleLiveAuthView: View {
                     if store.pendingAppleOnboardingUserId != nil {
                         applePostSignupOnboardingCard
                     } else {
+                        if let account = store.detectedCrossAppAccount {
+                            crossAppDetectedBanner(account: account)
+                        }
                         modePickerCard
                         appleSignInCard
                         if selectedTab == .login {
@@ -953,5 +956,73 @@ public struct VipleLiveAuthView: View {
                 dismiss()
             }
         }
+    }
+
+    private func crossAppDetectedBanner(account: LivriaCrossAppAccount) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Nous avons détecté que vous étiez connecté depuis \(account.sourceApp). Souhaitez-vous vous connecter au même compte avec Livria Store ?")
+                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+
+            HStack(spacing: 12) {
+                LevelRingView(
+                    avatarUrl: account.avatarUrl,
+                    displayName: account.displayName,
+                    level: max(1, account.level),
+                    xp: max(0, account.xp),
+                    size: 54
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(account.displayName)
+                        .font(.system(size: 15, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                    Text(account.email)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+                Spacer()
+            }
+
+            Button {
+                Task {
+                    await store.acceptDetectedCrossAppAccount()
+                    if store.isAuthenticated {
+                        dismiss()
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if store.isAcceptingCrossAppSSO {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "checkmark.seal.fill")
+                    }
+                    Text("Se connecter en 1 clic (\(account.displayName))")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [LivriaPalette.primary, LivriaPalette.coral],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .disabled(store.isAcceptingCrossAppSSO)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LivriaPalette.cardPaper)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(LivriaPalette.primary.opacity(0.3), lineWidth: 1.5)
+        )
     }
 }

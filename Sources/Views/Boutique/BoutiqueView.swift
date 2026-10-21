@@ -491,8 +491,17 @@ public struct BoutiqueView: View {
     }
 
     private func openMemberInLivriaSocial(member: LivriaMemberSummary) {
-        let encodedName = member.displayName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        guard let appUrl = URL(string: "livriasocial://profile/\(member.id)?name=\(encodedName)") else {
+        var components = URLComponents(string: "livriasocial://profile/\(member.id)")
+        var qItems: [URLQueryItem] = [URLQueryItem(name: "name", value: member.displayName)]
+        if store.isAuthenticated, let u = store.currentUser, !u.isGuestAccount {
+            qItems.append(URLQueryItem(name: "ssoUid", value: String(u.id)))
+            qItems.append(URLQueryItem(name: "ssoEmail", value: u.email))
+            qItems.append(URLQueryItem(name: "ssoName", value: u.displayName))
+            qItems.append(URLQueryItem(name: "ssoAvatar", value: u.avatarUrl ?? ""))
+            qItems.append(URLQueryItem(name: "ssoSource", value: "Livria Store"))
+        }
+        components?.queryItems = qItems
+        guard let appUrl = components?.url else {
             return
         }
         #if canImport(UIKit)
