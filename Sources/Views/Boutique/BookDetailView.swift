@@ -1,0 +1,470 @@
+import SwiftUI
+
+// MARK: - Fiche Livre Détaillée Livria Store (Sélecteur Neuf / Occasion, Bande-son d'ambiance, Avis & Troc)
+
+public struct BookDetailView: View {
+    @EnvironmentObject private var store: LivriaStoreViewModel
+    @StateObject private var ambientPlayer = LivriaAmbientSoundPlayer()
+    public let book: LivriaBook
+
+    @State private var selectedFormat: String = "Broché"
+    @State private var selectedConditionIsUsed: Bool = false
+    @State private var reviews: [LivriaBookReview] = []
+    @State private var similarBooks: [LivriaBook] = []
+    @State private var averageRating: Double = 5.0
+    @State private var newReviewRating: Int = 5
+    @State private var newReviewComment: String = ""
+
+    public init(book: LivriaBook) {
+        self.book = book
+        _selectedConditionIsUsed = State(initialValue: !book.hasNewStock && book.hasUsedStock)
+    }
+
+    private var activeCartFormat: String {
+        if selectedFormat == "Broché" {
+            return selectedConditionIsUsed ? book.cartFormatForUsed : "Broché"
+        }
+        return selectedFormat
+    }
+
+    private var displayedPrice: Double {
+        if store.currentUser?.isLivriaPlus == true && (selectedFormat == "Numérique" || selectedFormat == "Audio") {
+            return 0.0
+        }
+        if selectedFormat == "Broché" && selectedConditionIsUsed {
+            return book.effectiveUsedPrice
+        }
+        return book.price
+    }
+
+    public var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                headerBookCard
+                formatAndConditionSelectorCard
+                actionButtonsCard
+                ambientAndMetadataCard
+                synopsisCard
+                reviewsSectionCard
+            }
+            .padding(16)
+        }
+        .livriaThemedBackground(store.currentThemeId)
+        .navigationTitle(book.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadBookDetails()
+        }
+        .onDisappear {
+            ambientPlayer.stop()
+        }
+    }
+
+    // MARK: - En-tête Fiche Livre
+
+    private var headerBookCard: some View {
+        HStack(alignment: .top, spacing: 16) {
+            LivriaBookCoverView(
+                coverUrl: book.coverUrl,
+                title: book.title,
+                width: 126,
+                height: 184,
+                cornerRadius: 16
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(book.genre)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(LivriaPalette.primarySoft))
+
+                    if let origin = book.countryOfOrigin, !origin.isEmpty {
+                        Text("🌍 \(origin)")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                    }
+                }
+
+                Text(book.title)
+                    .font(.system(size: 20, weight: .bold, design: .serif))
+                    .foregroundStyle(LivriaPalette.ink)
+
+                Text("par \(book.author)")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+
+                if !book.isbn.isEmpty {
+                    Text("ISBN : \(book.isbn)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+
+                HStack(spacing: 4) {
+                    ForEach(1...5, id: \.self) { star in
+                        Image(systemName: Double(star) <= averageRating ? "star.fill" : "star")
+                            .foregroundStyle(LivriaPalette.gold)
+                            .font(.caption)
+                    }
+                    Text(String(format: "%.1f (%d avis)", averageRating, reviews.count))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+
+                // Prix selon l'état sélectionné
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayedPrice == 0 ? "Inclus Looby+ (0,00 €)" : String(format: "%.2f €", displayedPrice))
+                        .font(.system(size: 24, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            displayedPrice == 0
+                                ? LivriaPalette.mint
+                                : (selectedFormat == "Broché" && selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.primary)
+                        )
+
+                    if selectedFormat == "Broché" {
+                        Text(selectedConditionIsUsed ? "♻️ Exemplaire \(book.usedConditionLabel)" : "✨ Exemplaire Neuf éditeur")
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.mint)
+                    }
+                }
+            }
+            Spacer()
+        }
+        .livriaCard()
+    }
+
+    // MARK: - Sélecteur de Format & d'État (Neuf vs Occasion au prix indiqué de chacun)
+
+    private var formatAndConditionSelectorCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("1. Choisir le format")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+
+            HStack(spacing: 10) {
+                formatButton(format: "Broché", icon: "book.closed.fill", subtitle: "Livraison UPS / Relais")
+                formatButton(format: "Numérique", icon: "ipad", subtitle: "Édition numérique")
+                formatButton(format: "Audio", icon: "headphones", subtitle: "Livre audio narré")
+            }
+
+            if selectedFormat == "Broché" {
+                Divider()
+
+                Text("2. Choisir l'état de l'ouvrage papier")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+
+                HStack(spacing: 10) {
+                    if book.hasNewStock {
+                        conditionChoiceCard(
+                            isUsed: false,
+                            badge: "✨ Neuf",
+                            subtitle: "Exemplaire neuf (\(max(book.stock, 1)) en stock)",
+                            price: book.price,
+                            accent: LivriaPalette.primary
+                        )
+                    }
+
+                    if book.hasUsedStock {
+                        conditionChoiceCard(
+                            isUsed: true,
+                            badge: "♻️ \(book.usedConditionLabel)",
+                            subtitle: "Vérifié par Viple Wingman (\(book.usedStock ?? 1) en stock)",
+                            price: book.effectiveUsedPrice,
+                            accent: LivriaPalette.usedAmber
+                        )
+                    }
+                }
+            }
+        }
+        .livriaCard()
+    }
+
+    private func conditionChoiceCard(isUsed: Bool, badge: String, subtitle: String, price: Double, accent: Color) -> some View {
+        let isSelected = selectedConditionIsUsed == isUsed
+        return Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                selectedConditionIsUsed = isUsed
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(badge)
+                        .font(.system(size: 12.5, weight: .heavy, design: .rounded))
+                        .foregroundStyle(isSelected ? .white : accent)
+                    Spacer()
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isSelected ? .white : accent)
+                }
+                Text(String(format: "%.2f €", price))
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(isSelected ? .white : LivriaPalette.ink)
+                Text(subtitle)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(isSelected ? .white.opacity(0.9) : LivriaPalette.inkMuted)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? accent : LivriaPalette.background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? accent : LivriaPalette.border, lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func formatButton(format: String, icon: String, subtitle: String) -> some View {
+        let isSelected = selectedFormat == format
+        return Button {
+            selectedFormat = format
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .bold))
+                Text(format)
+                    .font(.system(size: 13, weight: .bold))
+                Text(subtitle)
+                    .font(.system(size: 9.5))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? LivriaPalette.primary : LivriaPalette.background)
+            )
+            .foregroundStyle(isSelected ? .white : LivriaPalette.ink)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? LivriaPalette.primary : LivriaPalette.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Boutons d'Action Boutique & Troc
+
+    private var actionButtonsCard: some View {
+        VStack(spacing: 10) {
+            Button {
+                Task {
+                    await store.addToCart(bookId: book.id, format: activeCartFormat, quantity: 1)
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "cart.fill.badge.plus")
+                    Text("Ajouter au panier • \(activeCartFormat) (\(String(format: "%.2f €", displayedPrice)))")
+                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: selectedFormat == "Broché" && selectedConditionIsUsed
+                            ? [LivriaPalette.usedAmber, LivriaPalette.coral]
+                            : [LivriaPalette.primary, LivriaPalette.coral],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    Task {
+                        await store.addToCart(bookId: book.id, format: activeCartFormat, quantity: 1)
+                        store.isShowingCheckoutSheet = true
+                    }
+                } label: {
+                    Label("Achat Express ( Pay / G Pay)", systemImage: "bolt.shield.fill")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primarySoft))
+                        .foregroundStyle(LivriaPalette.primaryDeep)
+                }
+
+                Button {
+                    store.selectedMainTab = 2
+                } label: {
+                    Label("Chercher / Proposer en Troc", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.goldSoft))
+                        .foregroundStyle(Color(red: 0.55, green: 0.32, blue: 0.02))
+                }
+            }
+        }
+        .livriaCard()
+    }
+
+    // MARK: - Bande-Son d'Ambiance Interactive & Mood Tags
+
+    private var ambientAndMetadataCard: some View {
+        let preset = (book.ambientSoundtrack?.isEmpty == false) ? book.ambientSoundtrack! : "Pluie douce & librairie"
+        let isPlaying = ambientPlayer.activePreset == preset
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("Ambiance sonore de l'ouvrage", systemImage: "waveform.and.mic")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                    Text(preset)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+                Spacer()
+                Button {
+                    ambientPlayer.toggle(preset: preset)
+                } label: {
+                    Label(isPlaying ? "Arrêter" : "Écouter l'ambiance", systemImage: isPlaying ? "stop.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(isPlaying ? LivriaPalette.coral : LivriaPalette.primary))
+                        .foregroundStyle(.white)
+                }
+            }
+
+            if let moods = book.moodTags, !moods.isEmpty {
+                Text("Atmosphère : \(moods)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+        }
+        .livriaCard(padding: 14)
+    }
+
+    // MARK: - Synopsis & Résumé IA Garanti Sans Spoiler
+
+    private var synopsisCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Résumé de l'ouvrage")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+            Text(book.description)
+                .font(.system(size: 14))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .lineSpacing(4)
+
+            if let noSpoil = book.aiSummaryNoSpoil, !noSpoil.isEmpty {
+                Divider()
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(LivriaPalette.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Note du Libraire IA (Garanti 0% Spoiler)")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundStyle(LivriaPalette.primary)
+                        Text(noSpoil)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primarySoft.opacity(0.5)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .livriaCard()
+    }
+
+    // MARK: - Avis des Lecteurs
+
+    private var reviewsSectionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Avis des acheteurs Livria Store (\(reviews.count))")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Votre note :")
+                        .font(.system(size: 13, weight: .semibold))
+                    ForEach(1...5, id: \.self) { star in
+                        Button {
+                            newReviewRating = star
+                        } label: {
+                            Image(systemName: star <= newReviewRating ? "star.fill" : "star")
+                                .foregroundStyle(LivriaPalette.gold)
+                        }
+                    }
+                }
+                TextField("Partagez votre avis sur cet ouvrage (+10 XP)...", text: $newReviewComment, axis: .vertical)
+                    .lineLimit(2...4)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.background))
+
+                Button {
+                    Task {
+                        let ok = await store.submitBookReview(bookId: book.id, rating: newReviewRating, comment: newReviewComment)
+                        if ok {
+                            newReviewComment = ""
+                            await loadBookDetails()
+                        }
+                    }
+                } label: {
+                    Text("Publier mon avis")
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(Capsule().fill(LivriaPalette.primary))
+                        .foregroundStyle(.white)
+                }
+                .disabled(newReviewComment.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.backgroundAlt.opacity(0.6)))
+
+            ForEach(reviews) { rev in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(rev.userName)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(LivriaPalette.ink)
+                        Spacer()
+                        HStack(spacing: 2) {
+                            ForEach(1...5, id: \.self) { s in
+                                Image(systemName: s <= rev.rating ? "star.fill" : "star")
+                                    .font(.caption2)
+                                    .foregroundStyle(LivriaPalette.gold)
+                            }
+                        }
+                        Text(rev.createdAt)
+                            .font(.system(size: 11))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                    }
+                    Text(rev.comment)
+                        .font(.system(size: 13))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
+            }
+        }
+        .livriaCard()
+    }
+
+    private func loadBookDetails() async {
+        do {
+            let detail = try await LivriaAPIClient.shared.fetchBookDetails(bookId: book.id)
+            self.reviews = detail.reviews
+            self.similarBooks = detail.similar
+            self.averageRating = detail.averageRating ?? 5.0
+        } catch {
+            // Garde les infos de base si hors-ligne
+        }
+    }
+}
