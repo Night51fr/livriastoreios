@@ -612,6 +612,33 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
+    public func cancelLoobyPlusSubscription() async -> Bool {
+        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
+            isShowingAuthSheet = true
+            return false
+        }
+        isPurchasingLoobyPlus = true
+        defer { isPurchasingLoobyPlus = false }
+
+        do {
+            let res = try await LivriaAPIClient.shared.postRaw("/loobyplus/cancel", body: userAuthFields)
+            if var updatedUser = currentUser {
+                updatedUser.isLivriaPlus = false
+                currentUser = updatedUser
+            }
+            if var updatedPlus = loobyPlus {
+                updatedPlus.isSubscribed = false
+                loobyPlus = updatedPlus
+            }
+            showToast((res["message"] as? String) ?? "Votre abonnement Looby+ a bien été résilié.")
+            await refreshBootstrap()
+            return true
+        } catch {
+            showToast(error.localizedDescription)
+            return false
+        }
+    }
+
     // MARK: - 2. Synchronisation Globale (/api/mobile/v1/bootstrap)
 
     public func refreshBootstrap(email: String? = nil, userId: Int? = nil) async {
