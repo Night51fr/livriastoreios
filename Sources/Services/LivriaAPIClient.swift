@@ -10,12 +10,43 @@ public final class LivriaAPIClient {
     private let session: URLSession
     private let decoder: JSONDecoder
 
+    public static let serverLunchBreakMessage = "Notre serveur est a sa pause dejeuner, Merci de revenir une fois le serveur rétabli."
+
     public init() {
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 25
-        cfg.timeoutIntervalForResource = 45
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: cfg)
         self.decoder = JSONDecoder()
+    }
+
+    private func performRequest(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw NSError(
+                    domain: "LivriaServerOutage",
+                    code: 503,
+                    userInfo: [NSLocalizedDescriptionKey: Self.serverLunchBreakMessage]
+                )
+            }
+            if http.statusCode >= 500 {
+                throw NSError(
+                    domain: "LivriaServerOutage",
+                    code: http.statusCode,
+                    userInfo: [NSLocalizedDescriptionKey: Self.serverLunchBreakMessage]
+                )
+            }
+            return (data, http)
+        } catch let nsErr as NSError where nsErr.domain == "LivriaServerOutage" {
+            throw nsErr
+        } catch {
+            throw NSError(
+                domain: "LivriaServerOutage",
+                code: 503,
+                userInfo: [NSLocalizedDescriptionKey: Self.serverLunchBreakMessage]
+            )
+        }
     }
 
     public func getJSON<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = []) async throws -> T {
@@ -27,19 +58,24 @@ public final class LivriaAPIClient {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 20
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaStore-iOS/26.0 (AppID/\(LivriaAppConfig.appleAppId); iPhone; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+        let (data, http) = try await performRequest(req)
+        if !(200...299).contains(http.statusCode) {
             if let errDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let msg = errDict["error"] as? String {
                 throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
             }
-            throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Erreur serveur HTTP \(http.statusCode)"])
+            throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: Self.serverLunchBreakMessage])
         }
-        return try decoder.decode(T.self, from: data)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw NSError(domain: "LivriaServerOutage", code: 503, userInfo: [NSLocalizedDescriptionKey: Self.serverLunchBreakMessage])
+        }
     }
 
     public func postJSON<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
@@ -47,19 +83,20 @@ public final class LivriaAPIClient {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 20
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaStore-iOS/26.0 (AppID/\(LivriaAppConfig.appleAppId); iPhone; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+        let (data, http) = try await performRequest(req)
+        if !(200...299).contains(http.statusCode) {
             if let errDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let msg = errDict["error"] as? String {
                 throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
             }
-            throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Erreur serveur HTTP \(http.statusCode)"])
+            throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: Self.serverLunchBreakMessage])
         }
         return try decoder.decode(T.self, from: data)
     }
@@ -69,16 +106,17 @@ public final class LivriaAPIClient {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 20
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaStore-iOS/26.0 (AppID/\(LivriaAppConfig.appleAppId); iPhone; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await session.data(for: req)
+        let (data, http) = try await performRequest(req)
         let dict = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            let msg = (dict["error"] as? String) ?? "Erreur serveur (\(http.statusCode))"
+        if !(200...299).contains(http.statusCode) {
+            let msg = (dict["error"] as? String) ?? Self.serverLunchBreakMessage
             throw NSError(domain: "LivriaStoreAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         return dict

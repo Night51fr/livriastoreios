@@ -19,6 +19,10 @@ public struct MainTabView: View {
                 LivriaStoreLoadingSplashView()
                     .environmentObject(store)
                     .transition(.opacity)
+            } else if store.isServerUnreachable && store.books.isEmpty {
+                LivriaStoreServerLunchBreakView()
+                    .environmentObject(store)
+                    .transition(.opacity)
             } else if !store.hasAcceptedTermsOfUse {
                 LivriaStoreLegalTermsView(isFirstLaunchGate: true)
                     .environmentObject(store)
@@ -255,6 +259,77 @@ public struct LivriaStoreMaintenanceView: View {
             while !Task.isCancelled && store.paymentSettings.mobileAppMaintenanceEnabled {
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
                 await store.refreshPaymentSettings()
+            }
+        }
+    }
+}
+
+// MARK: - Écran Serveur Indisponible / Timeout 20s / Erreur 503 (« Notre serveur est a sa pause dejeuner... »)
+
+public struct LivriaStoreServerLunchBreakView: View {
+    @EnvironmentObject private var store: LivriaStoreViewModel
+    @State private var isRetrying: Bool = false
+
+    public init() {}
+
+    public var body: some View {
+        ZStack {
+            Color.white
+                .ignoresSafeArea()
+
+            VStack(spacing: 22) {
+                if let uiImage = UIImage(named: "LivriaLogoTransparent") {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 68)
+                }
+
+                Image(systemName: "cup.and.saucer.fill")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [LivriaPalette.primary, LivriaPalette.coral],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                Text("Notre serveur est a sa pause dejeuner, Merci de revenir une fois le serveur rétabli.")
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+
+                Button {
+                    isRetrying = true
+                    Task {
+                        await store.refreshBootstrap()
+                        isRetrying = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isRetrying {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text("Réessayer")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 13)
+                    .background(
+                        LinearGradient(
+                            colors: [LivriaPalette.primary, LivriaPalette.coral],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                }
+                .disabled(isRetrying)
             }
         }
     }

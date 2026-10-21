@@ -30,6 +30,12 @@ public final class LivriaStoreViewModel: ObservableObject {
 
     // In-App Purchase StoreKit 2 Looby+
     @Published public var isPurchasingLoobyPlus: Bool = false
+    @Published public var isShowingLoobyPlusUnavailableAlert: Bool = false
+    @Published public var loobyPlusUnavailableMessage: String = "Looby+ pourra être souscrit prochainement directement depuis l'application."
+
+    // État Serveur Indisponible / Timeout 20s / HTTP 503
+    @Published public var isServerUnreachable: Bool = false
+    @Published public var serverUnreachableMessage: String = LivriaAPIClient.serverLunchBreakMessage
 
     // Conditions Générales d'Utilisation & de Vente (obligatoires au 1er lancement)
     @Published public var hasAcceptedTermsOfUse: Bool = false
@@ -532,46 +538,41 @@ public final class LivriaStoreViewModel: ObservableObject {
 
         do {
             let products = try await Product.products(for: [Self.loobyPlusProductID])
-            if let product = products.first {
-                let result = try await product.purchase()
-                switch result {
-                case .success(let verification):
-                    switch verification {
-                    case .verified(let transaction):
-                        await transaction.finish()
-                        let res = try await LivriaAPIClient.shared.activateLoobyPlusIap(
-                            userId: user.id,
-                            email: user.email,
-                            cid: user.cid,
-                            productId: product.id,
-                            transactionId: String(transaction.id)
-                        )
-                        showToast((res["message"] as? String) ?? "Abonnement Looby+ activé via l'App Store !")
-                        await refreshBootstrap()
-                    case .unverified(_, _):
-                        showToast("La vérification de la transaction App Store a échoué.")
-                    }
-                case .userCancelled:
-                    break
-                case .pending:
-                    showToast("Votre achat Looby+ est en attente de validation App Store.")
-                @unknown default:
-                    break
+            guard let product = products.first else {
+                // Si l'application ou le produit In-App n'est pas encore publié sur l'App Store, ne JAMAIS valider sans paiement
+                loobyPlusUnavailableMessage = "Looby+ pourra être souscrit prochainement directement depuis l'application."
+                isShowingLoobyPlusUnavailableAlert = true
+                return
+            }
+
+            let result = try await product.purchase()
+            switch result {
+            case .success(let verification):
+                switch verification {
+                case .verified(let transaction):
+                    await transaction.finish()
+                    let res = try await LivriaAPIClient.shared.activateLoobyPlusIap(
+                        userId: user.id,
+                        email: user.email,
+                        cid: user.cid,
+                        productId: product.id,
+                        transactionId: String(transaction.id)
+                    )
+                    showToast((res["message"] as? String) ?? "Abonnement Looby+ activé via l'App Store !")
+                    await refreshBootstrap()
+                case .unverified(_, _):
+                    showToast("La vérification de la transaction App Store a échoué.")
                 }
-            } else {
-                // Activation StoreKit Sandbox / TestFlight immédiate si le produit n'est pas encore propagé sur App Store Connect
-                let res = try await LivriaAPIClient.shared.activateLoobyPlusIap(
-                    userId: user.id,
-                    email: user.email,
-                    cid: user.cid,
-                    productId: Self.loobyPlusProductID,
-                    transactionId: "SK2-SANDBOX-\(Int(Date().timeIntervalSince1970))"
-                )
-                showToast((res["message"] as? String) ?? "Abonnement Looby+ (Achat In-App) activé !")
-                await refreshBootstrap()
+            case .userCancelled:
+                break
+            case .pending:
+                showToast("Votre achat Looby+ est en attente de validation App Store.")
+            @unknown default:
+                break
             }
         } catch {
-            showToast(error.localizedDescription)
+            loobyPlusUnavailableMessage = "Looby+ pourra être souscrit prochainement directement depuis l'application."
+            isShowingLoobyPlusUnavailableAlert = true
         }
     }
 
@@ -652,8 +653,12 @@ public final class LivriaStoreViewModel: ObservableObject {
                 defaults.set(incomingUser.email, forKey: savedEmailKey)
             }
             defaults.set(incomingUser.id, forKey: savedUserIdKey)
+            self.isServerUnreachable = false
         } catch {
             print("[LivriaStore.iOS] Erreur bootstrap: \(error.localizedDescription)")
+            self.serverUnreachableMessage = LivriaAPIClient.serverLunchBreakMessage
+            self.isServerUnreachable = true
+            self.showToast(LivriaAPIClient.serverLunchBreakMessage)
         }
     }
 

@@ -57,6 +57,11 @@ public struct LoobyPlusView: View {
                     selectedBookToRedeem = audioEligibleBooks.first?.id ?? 0
                 }
             }
+            .alert("Abonnement Looby+", isPresented: $store.isShowingLoobyPlusUnavailableAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(store.loobyPlusUnavailableMessage)
+            }
         }
     }
 
