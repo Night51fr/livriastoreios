@@ -44,24 +44,28 @@ public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
     public var googlePayEnabled: Bool
     public var loobySocialAppStoreRedirectEnabled: Bool
     public var loobySocialAppStoreUrl: String
+    public var mobileAppMaintenanceEnabled: Bool
 
     public init(
         paypalEnabled: Bool = true,
         applePayEnabled: Bool = true,
         googlePayEnabled: Bool = true,
         loobySocialAppStoreRedirectEnabled: Bool = true,
-        loobySocialAppStoreUrl: String = "https://apps.apple.com/fr/search?term=LoobySocial"
+        loobySocialAppStoreUrl: String = "https://apps.apple.com/fr/search?term=LoobySocial",
+        mobileAppMaintenanceEnabled: Bool = false
     ) {
         self.paypalEnabled = paypalEnabled
         self.applePayEnabled = applePayEnabled
         self.googlePayEnabled = googlePayEnabled
         self.loobySocialAppStoreRedirectEnabled = loobySocialAppStoreRedirectEnabled
         self.loobySocialAppStoreUrl = loobySocialAppStoreUrl
+        self.mobileAppMaintenanceEnabled = mobileAppMaintenanceEnabled
     }
 
     enum CodingKeys: String, CodingKey {
         case paypalEnabled, applePayEnabled, googlePayEnabled
         case loobySocialAppStoreRedirectEnabled, loobySocialAppStoreUrl
+        case mobileAppMaintenanceEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +75,7 @@ public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
         googlePayEnabled = (try? c.decode(Bool.self, forKey: .googlePayEnabled)) ?? true
         loobySocialAppStoreRedirectEnabled = (try? c.decode(Bool.self, forKey: .loobySocialAppStoreRedirectEnabled)) ?? true
         loobySocialAppStoreUrl = (try? c.decode(String.self, forKey: .loobySocialAppStoreUrl)) ?? "https://apps.apple.com/fr/search?term=LoobySocial"
+        mobileAppMaintenanceEnabled = (try? c.decode(Bool.self, forKey: .mobileAppMaintenanceEnabled)) ?? false
     }
 }
 

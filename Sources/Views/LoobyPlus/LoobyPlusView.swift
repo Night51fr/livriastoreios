@@ -19,6 +19,11 @@ public struct LoobyPlusView: View {
         store.currentUser?.isLivriaPlus == true || store.loobyPlus?.isSubscribed == true
     }
 
+    /// Uniquement les livres qui disposent effectivement d'un format Audio
+    private var audioEligibleBooks: [LivriaBook] {
+        store.books.filter { $0.hasAudio }
+    }
+
     public var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -43,8 +48,13 @@ public struct LoobyPlusView: View {
                     boxNotes = pref.specialNotes
                     boxAddress = pref.shippingAddress
                 }
-                if selectedBookToRedeem == 0, let first = store.books.first {
-                    selectedBookToRedeem = first.id
+                if !audioEligibleBooks.contains(where: { $0.id == selectedBookToRedeem }) {
+                    selectedBookToRedeem = audioEligibleBooks.first?.id ?? 0
+                }
+            }
+            .onChange(of: store.books) { _, _ in
+                if !audioEligibleBooks.contains(where: { $0.id == selectedBookToRedeem }) {
+                    selectedBookToRedeem = audioEligibleBooks.first?.id ?? 0
                 }
             }
         }
@@ -244,7 +254,7 @@ public struct LoobyPlusView: View {
             .padding(20)
             .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(LivriaPalette.loobyPlusGradient))
 
-            // Échange Crédit Audio Looby+
+            // Échange Crédit Audio Looby+ (uniquement les livres disponibles au format Audio)
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Image(systemName: "headphones.circle.fill")
@@ -255,29 +265,38 @@ public struct LoobyPlusView: View {
                         .foregroundStyle(LivriaPalette.ink)
                 }
 
-                Picker("Ouvrage Audio", selection: $selectedBookToRedeem) {
-                    ForEach(store.books) { b in
-                        Text("\(b.title) — \(b.author)").tag(b.id)
-                    }
-                }
-                .pickerStyle(.menu)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
-
-                Button {
-                    if selectedBookToRedeem > 0 {
-                        Task {
-                            await store.redeemAudioCredit(bookId: selectedBookToRedeem)
+                if audioEligibleBooks.isEmpty {
+                    Text("Aucun livre disposant d'un format Audio n'est actuellement disponible dans le catalogue.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
+                } else {
+                    Picker("Ouvrage Audio", selection: $selectedBookToRedeem) {
+                        ForEach(audioEligibleBooks) { b in
+                            Text("\(b.title) — \(b.author)").tag(b.id)
                         }
                     }
-                } label: {
-                    Text("Débloquer ce Livre Audio avec 1 crédit")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primary))
-                        .foregroundStyle(.white)
+                    .pickerStyle(.menu)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
+
+                    Button {
+                        if selectedBookToRedeem > 0 {
+                            Task {
+                                await store.redeemAudioCredit(bookId: selectedBookToRedeem)
+                            }
+                        }
+                    } label: {
+                        Text("Débloquer ce Livre Audio avec 1 crédit")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primary))
+                            .foregroundStyle(.white)
+                    }
                 }
             }
             .livriaCard()

@@ -5,12 +5,17 @@ import UIKit
 
 public struct MainTabView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
 
     public var body: some View {
         ZStack {
-            if store.isInitialBootstrapping {
+            if store.paymentSettings.mobileAppMaintenanceEnabled {
+                LivriaStoreMaintenanceView()
+                    .environmentObject(store)
+                    .transition(.opacity)
+            } else if store.isInitialBootstrapping {
                 LivriaStoreLoadingSplashView()
                     .environmentObject(store)
                     .transition(.opacity)
@@ -21,6 +26,13 @@ public struct MainTabView: View {
             } else {
                 mainAppContent
                     .transition(.opacity)
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task {
+                    await store.refreshPaymentSettings()
+                }
             }
         }
     }
@@ -60,6 +72,9 @@ public struct MainTabView: View {
             }
             .tint(LivriaPalette.primary)
             .onChange(of: store.selectedMainTab) { _, newTab in
+                Task {
+                    await store.refreshPaymentSettings()
+                }
                 if !store.isAuthenticated && (newTab == 2 || newTab == 3) {
                     store.isShowingAuthSheet = true
                 }
@@ -214,6 +229,33 @@ public struct LivriaStoreLoadingSplashView: View {
         .onAppear {
             isSpinning = true
             isPulsing = true
+        }
+    }
+}
+
+// MARK: - Écran « Maintenance en cours » (Contrôlé en direct depuis /admin sur Livria)
+
+public struct LivriaStoreMaintenanceView: View {
+    @EnvironmentObject private var store: LivriaStoreViewModel
+
+    public init() {}
+
+    public var body: some View {
+        ZStack {
+            Color.white
+                .ignoresSafeArea()
+
+            Text("Maintenance en cours")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+        }
+        .task {
+            while !Task.isCancelled && store.paymentSettings.mobileAppMaintenanceEnabled {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                await store.refreshPaymentSettings()
+            }
         }
     }
 }
