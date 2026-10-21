@@ -17,6 +17,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var isShowingISBNScannerSheet: Bool = false
     @Published public var scannedBookForDetail: LivriaBook? = nil
     @Published public var activeToastMessage: String? = nil
+    @Published public var isInitialBootstrapping: Bool = true
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
     @Published public var applePasswordSetupNotice: String? = nil
@@ -87,13 +88,27 @@ public final class LivriaStoreViewModel: ObservableObject {
         if let email = savedEmail, !email.isEmpty, !email.lowercased().hasSuffix("@guest.livria.store") {
             self.isAuthenticated = true
             Task {
+                async let minSplashDelay: Void = {
+                    try? await Task.sleep(nanoseconds: 1_400_000_000)
+                }()
                 await refreshBootstrap(email: email, userId: savedUid > 0 ? savedUid : nil)
+                _ = await minSplashDelay
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    self.isInitialBootstrapping = false
+                }
             }
         } else {
             let guestEmail = getOrCreateGuestEmail()
             self.isAuthenticated = false
             Task {
+                async let minSplashDelay: Void = {
+                    try? await Task.sleep(nanoseconds: 1_400_000_000)
+                }()
                 await refreshBootstrap(email: guestEmail, userId: savedUid > 0 ? savedUid : nil)
+                _ = await minSplashDelay
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    self.isInitialBootstrapping = false
+                }
             }
         }
     }
