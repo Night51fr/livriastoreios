@@ -5,7 +5,8 @@ import Foundation
 public enum LivriaAppConfig: Sendable {
     public static let appName = "Livria Store"
     public static let appleAppId = "6825159743"
-    public static let bundleIdentifier = "store.livria.ios"
+    public static let bundleIdentifier = "com.viplenetwork.livria"
+    public static let signingOrganization = "Viple"
     public static let appStoreURL = "https://apps.apple.com/fr/app/livria-store/id6825159743"
     public static let minimumIOSVersion = "18.0"
     public static let enhancedIOSVersion = "26.0"

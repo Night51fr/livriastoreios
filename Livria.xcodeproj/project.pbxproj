@@ -75,6 +75,7 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
+				ORGANIZATIONNAME = Viple;
 				TargetAttributes = {
 					AA0000060000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
@@ -161,7 +162,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2026.11;
-				PRODUCT_BUNDLE_IDENTIFIER = store.livria.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.viplenetwork.livria;
 				PRODUCT_NAME = "LivriaStore";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -186,7 +187,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2026.11;
-				PRODUCT_BUNDLE_IDENTIFIER = store.livria.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.viplenetwork.livria;
 				PRODUCT_NAME = "LivriaStore";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

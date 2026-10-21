@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
-	<string>store.livria.ios</string>
+	<string>com.viplenetwork.livria</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -36,7 +36,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>store.livria.ios</string>
+			<string>com.viplenetwork.livria</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>livriastore</string>
