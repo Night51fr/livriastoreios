@@ -176,6 +176,7 @@ public struct CheckoutView: View {
     @State private var city: String = ""
 
     @State private var selectedPaymentMethod: String = "PayPal"
+    @State private var selectedWalletSource: String = "paypal"
     @State private var isClickAndCollect: Bool = false
     @State private var selectedRelayId: Int? = nil
     @State private var selectedUpsPointId: String = ""
@@ -271,7 +272,42 @@ public struct CheckoutView: View {
                     city = u.city
                     relaySearchQuery = u.postalCode
                 }
-                upsRelayResults = store.relays?.upsPoints ?? []
+
+                var initialUpsList = store.relays?.upsPoints ?? []
+
+                // Si un point relais a été choisi dans la section "Points Relais", on le met par défaut tout en affichant la liste
+                if let chosenUps = store.selectedUpsPointForCheckout {
+                    isClickAndCollect = true
+                    selectedUpsPointId = chosenUps.id
+                    selectedRelayId = nil
+                    address = "\(chosenUps.name) - \(chosenUps.address)"
+                    postalCode = chosenUps.postalCode
+                    city = chosenUps.city
+                    relaySearchQuery = chosenUps.postalCode
+                    if !initialUpsList.contains(where: { $0.id == chosenUps.id }) {
+                        initialUpsList.insert(chosenUps, at: 0)
+                    }
+                    if initialUpsList.count <= 1 && !chosenUps.postalCode.isEmpty {
+                        Task {
+                            await searchRelaysForCheckout(query: chosenUps.postalCode, keepSelectedUps: chosenUps)
+                        }
+                    }
+                } else if let chosenCommunity = store.selectedCommunityRelayForCheckout {
+                    isClickAndCollect = true
+                    selectedRelayId = chosenCommunity.id
+                    selectedUpsPointId = ""
+                    address = "\(chosenCommunity.name) - \(chosenCommunity.address)"
+                    postalCode = chosenCommunity.postalCode
+                    city = chosenCommunity.city
+                    relaySearchQuery = chosenCommunity.postalCode
+                }
+
+                upsRelayResults = initialUpsList
+
+                Task {
+                    await store.refreshPaymentSettings()
+                    syncSelectedPaymentWithAdminSettings()
+                }
             }
             .sheet(item: $activePayPalSession) { sessionItem in
                 PayPalApprovalWebSheet(
@@ -298,14 +334,53 @@ public struct CheckoutView: View {
         }
     }
 
-    // MARK: - Paiement Sécurisé PayPal / Apple Pay / Google Pay
+    // MARK: - Sélection du Mode de Paiement (PayPal / Apple Pay / Google Pay synchronisé avec /admin)
+
+    private var selectedWalletDisplayName: String {
+        switch selectedWalletSource {
+        case "apple_pay": return "Apple Pay"
+        case "google_pay": return "Google Pay"
+        default: return "PayPal"
+        }
+    }
+
+    private func syncSelectedPaymentWithAdminSettings() {
+        let ps = store.paymentSettings
+        if selectedWalletSource == "paypal" && !ps.paypalEnabled {
+            if ps.applePayEnabled {
+                selectedWalletSource = "apple_pay"
+                selectedPaymentMethod = "ApplePay_PayPal"
+            } else if ps.googlePayEnabled {
+                selectedWalletSource = "google_pay"
+                selectedPaymentMethod = "GooglePay_PayPal"
+            }
+        } else if selectedWalletSource == "apple_pay" && !ps.applePayEnabled {
+            if ps.paypalEnabled {
+                selectedWalletSource = "paypal"
+                selectedPaymentMethod = "PayPal"
+            } else if ps.googlePayEnabled {
+                selectedWalletSource = "google_pay"
+                selectedPaymentMethod = "GooglePay_PayPal"
+            }
+        } else if selectedWalletSource == "google_pay" && !ps.googlePayEnabled {
+            if ps.paypalEnabled {
+                selectedWalletSource = "paypal"
+                selectedPaymentMethod = "PayPal"
+            } else if ps.applePayEnabled {
+                selectedWalletSource = "apple_pay"
+                selectedPaymentMethod = "ApplePay_PayPal"
+            }
+        }
+    }
 
     private var expressWalletsViaPayPalCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let ps = store.paymentSettings
+
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "lock.shield.fill")
                     .foregroundStyle(LivriaPalette.primary)
-                Text("Mode de règlement sécurisé")
+                Text("Choisissez votre moyen de paiement")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(LivriaPalette.ink)
                 Spacer()
@@ -326,64 +401,192 @@ public struct CheckoutView: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                // PayPal
+            HStack(spacing: 8) {
+                // 1. PayPal
                 Button {
-                    selectedPaymentMethod = "PayPal"
-                    startCheckoutFlow(walletSource: "paypal")
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "p.circle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("PayPal")
-                            .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                    guard ps.paypalEnabled else { return }
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        selectedWalletSource = "paypal"
+                        selectedPaymentMethod = "PayPal"
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.0, green: 0.44, blue: 0.73)))
-                    .foregroundStyle(.white)
+                } label: {
+                    if ps.paypalEnabled {
+                        let isSelected = selectedWalletSource == "paypal"
+                        HStack(spacing: 4) {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "p.circle.fill")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("PayPal")
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(red: 0.0, green: 0.44, blue: 0.73).opacity(isSelected ? 1.0 : 0.78))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(isSelected ? LivriaPalette.gold : Color.clear, lineWidth: 2.5)
+                        )
+                        .foregroundStyle(.white)
+                    } else {
+                        VStack(spacing: 2) {
+                            Image(systemName: "nosign")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("PayPal\nindisponible")
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .padding(.horizontal, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.gray.opacity(0.16))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.gray.opacity(0.32), lineWidth: 1)
+                        )
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                    }
                 }
+                .buttonStyle(.plain)
+                .disabled(!ps.paypalEnabled)
 
-                // Apple Pay
+                // 2. Apple Pay
                 Button {
-                    selectedPaymentMethod = "ApplePay_PayPal"
-                    startCheckoutFlow(walletSource: "apple_pay")
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "apple.logo")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("Pay")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                    guard ps.applePayEnabled else { return }
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        selectedWalletSource = "apple_pay"
+                        selectedPaymentMethod = "ApplePay_PayPal"
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black))
-                    .foregroundStyle(.white)
+                } label: {
+                    if ps.applePayEnabled {
+                        let isSelected = selectedWalletSource == "apple_pay"
+                        HStack(spacing: 4) {
+                            if isSelected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(LivriaPalette.gold)
+                            }
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Pay")
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.black.opacity(isSelected ? 1.0 : 0.78))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(isSelected ? LivriaPalette.gold : Color.clear, lineWidth: 2.5)
+                        )
+                        .foregroundStyle(.white)
+                    } else {
+                        VStack(spacing: 2) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("Apple Pay\nindisponible")
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .padding(.horizontal, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.gray.opacity(0.16))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.gray.opacity(0.32), lineWidth: 1)
+                        )
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                    }
                 }
+                .buttonStyle(.plain)
+                .disabled(!ps.applePayEnabled)
 
-                // Google Pay
+                // 3. Google Pay
                 Button {
-                    selectedPaymentMethod = "GooglePay_PayPal"
-                    startCheckoutFlow(walletSource: "google_pay")
-                } label: {
-                    HStack(spacing: 5) {
-                        Text("G")
-                            .font(.system(size: 16, weight: .black, design: .rounded))
-                            .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
-                        Text("Pay")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(LivriaPalette.ink)
+                    guard ps.googlePayEnabled else { return }
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        selectedWalletSource = "google_pay"
+                        selectedPaymentMethod = "GooglePay_PayPal"
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.black.opacity(0.18), lineWidth: 1))
+                } label: {
+                    if ps.googlePayEnabled {
+                        let isSelected = selectedWalletSource == "google_pay"
+                        HStack(spacing: 4) {
+                            if isSelected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(LivriaPalette.primary)
+                            }
+                            Text("G")
+                                .font(.system(size: 14, weight: .black, design: .rounded))
+                                .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                            Text("Pay")
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(LivriaPalette.ink)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.white)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(isSelected ? LivriaPalette.primary : Color.black.opacity(0.18), lineWidth: isSelected ? 2.5 : 1)
+                        )
+                    } else {
+                        VStack(spacing: 2) {
+                            Image(systemName: "nosign")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("Google Pay\nindisponible")
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .padding(.horizontal, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.gray.opacity(0.16))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.gray.opacity(0.32), lineWidth: 1)
+                        )
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                    }
                 }
+                .buttonStyle(.plain)
+                .disabled(!ps.googlePayEnabled)
             }
 
-            Text("Votre commande est validée et expédiée par UPS dès confirmation de votre paiement.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(LivriaPalette.inkMuted)
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.caption)
+                    .foregroundStyle(LivriaPalette.primary)
+                Text("Mode sélectionné : \(selectedWalletDisplayName). Cliquez sur le bouton de validation tout en bas pour régler.")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+            }
         }
         .livriaCard()
     }
@@ -510,6 +713,7 @@ public struct CheckoutView: View {
                             address = "\(ups.name) - \(ups.address)"
                             postalCode = ups.postalCode
                             city = ups.city
+                            store.selectUpsRelayForDefaultCheckout(ups)
                         } label: {
                             HStack {
                                 Image(systemName: selectedUpsPointId == ups.id ? "checkmark.circle.fill" : "circle")
@@ -540,6 +744,7 @@ public struct CheckoutView: View {
                             address = "\(pt.name) - \(pt.address)"
                             postalCode = pt.postalCode
                             city = pt.city
+                            store.selectCommunityRelayForDefaultCheckout(pt)
                         } label: {
                             HStack {
                                 Image(systemName: selectedRelayId == pt.id ? "checkmark.circle.fill" : "circle")
@@ -565,12 +770,16 @@ public struct CheckoutView: View {
         .livriaCard()
     }
 
-    private func searchRelaysForCheckout(query: String) async {
+    private func searchRelaysForCheckout(query: String, keepSelectedUps: LivriaUpsPickupPoint? = nil) async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         isSearchingRelays = true
         if let res = await store.searchUpsRelaysDetailed(query: q) {
-            upsRelayResults = res.points
+            var pts = res.points
+            if let keep = keepSelectedUps, !pts.contains(where: { $0.id == keep.id }) {
+                pts.insert(keep, at: 0)
+            }
+            upsRelayResults = pts
         }
         isSearchingRelays = false
     }
@@ -701,8 +910,19 @@ public struct CheckoutView: View {
     }
 
     private var confirmOrderButton: some View {
-        Button {
-            startCheckoutFlow(walletSource: "paypal")
+        let ps = store.paymentSettings
+        let isFreeOrder = store.isBuyGodUser || netPayableAmount <= 0
+        let isSelectedMethodEnabled: Bool = {
+            if isFreeOrder { return true }
+            switch selectedWalletSource {
+            case "apple_pay": return ps.applePayEnabled
+            case "google_pay": return ps.googlePayEnabled
+            default: return ps.paypalEnabled
+            }
+        }()
+
+        return Button {
+            startCheckoutFlow(walletSource: selectedWalletSource)
         } label: {
             HStack {
                 if isSubmitting {
@@ -711,19 +931,27 @@ public struct CheckoutView: View {
                     Image(systemName: "lock.fill")
                 }
                 Text(
-                    store.isBuyGodUser || netPayableAmount <= 0
+                    isFreeOrder
                         ? "Valider ma commande (\(String(format: "%.2f €", netPayableAmount)))"
-                        : "Payer avec PayPal et valider (\(String(format: "%.2f €", netPayableAmount)))"
+                        : (isSelectedMethodEnabled
+                            ? "Payer avec \(selectedWalletDisplayName) et valider (\(String(format: "%.2f €", netPayableAmount)))"
+                            : "\(selectedWalletDisplayName) indisponible")
                 )
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(LinearGradient(colors: [LivriaPalette.primary, LivriaPalette.coral], startPoint: .leading, endPoint: .trailing))
+            .padding(.horizontal, 12)
+            .background(
+                isSelectedMethodEnabled
+                    ? AnyShapeStyle(LinearGradient(colors: [LivriaPalette.primary, LivriaPalette.coral], startPoint: .leading, endPoint: .trailing))
+                    : AnyShapeStyle(Color.gray.opacity(0.45))
+            )
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .disabled(isSubmitting || store.cart.isEmpty)
+        .disabled(isSubmitting || store.cart.isEmpty || !isSelectedMethodEnabled)
     }
 
     // MARK: - Confirmation de Commande + Bordereau UPS + Création de Compte 1-Clic

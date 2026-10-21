@@ -373,6 +373,8 @@ public struct TradeView: View {
                     TextField("Précisions (édition, remise en main propre ou Point Relais)", text: $newDescription)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .livriaThemedBackground(store.currentThemeId)
             .navigationTitle("Publier une offre de troc")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -438,6 +440,8 @@ public struct TradeView: View {
                         .lineLimit(3...5)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .livriaThemedBackground(store.currentThemeId)
             .navigationTitle("Proposer un Troc")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

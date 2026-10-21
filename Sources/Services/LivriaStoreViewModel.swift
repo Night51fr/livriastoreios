@@ -10,11 +10,18 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var isShowingCartSheet: Bool = false
     @Published public var isShowingCheckoutSheet: Bool = false
     @Published public var isShowingAuthSheet: Bool = false
+    @Published public var isShowingTermsReviewSheet: Bool = false
     @Published public var isShowingISBNScannerSheet: Bool = false
     @Published public var scannedBookForDetail: LivriaBook? = nil
     @Published public var activeToastMessage: String? = nil
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
+
+    // Conditions Générales d'Utilisation & de Vente (obligatoires au 1er lancement)
+    @Published public var hasAcceptedTermsOfUse: Bool = false
+
+    // Thème persistant sur toutes les pages de l'application sans exception
+    @Published public var selectedThemeId: String = "default"
 
     // Session Viple Live ID ou Session Invité (Commande sans compte autorisée)
     @Published public var isAuthenticated: Bool = false
@@ -31,20 +38,36 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var relays: LivriaRelaysBundle? = nil
     @Published public var games: LivriaGamesData? = nil
     @Published public var supportTickets: [LivriaSupportTicket] = []
+    @Published public var paymentSettings: LivriaPaymentSettings = LivriaPaymentSettings()
 
     // Recherche de membres (section Membres de la barre de recherche -> redirige vers Livria Social)
     @Published public var searchedMembers: [LivriaMemberSearchResult] = []
 
-    // Sélection Point Relais pour le Checkout
+    // Sélection Point Relais pour le Checkout (mis par défaut dans le Checkout lorsqu'il est choisi dans Points Relais)
     @Published public var selectedRelayForCheckout: String? = nil
     @Published public var selectedCommunityRelayId: Int? = nil
+    @Published public var selectedUpsPointForCheckout: LivriaUpsPickupPoint? = nil
+    @Published public var selectedCommunityRelayForCheckout: LivriaCommunityRelay? = nil
 
     private let defaults = UserDefaults.standard
+    private let acceptedTermsKey = "livria.store.ios.acceptedCGU.v1"
+    private let savedThemeKey = "livria.store.ios.selectedThemeId.v2"
     private let savedEmailKey = "livria.store.ios.vipleLiveEmail"
     private let savedUserIdKey = "livria.store.ios.vipleLiveUserId"
     private let savedGuestEmailKey = "livria.store.ios.guestEmail"
+    private let savedUpsRelayDataKey = "livria.store.ios.selectedUpsRelay.v1"
 
     public init() {
+        self.hasAcceptedTermsOfUse = defaults.bool(forKey: acceptedTermsKey)
+        if let persistedTheme = defaults.string(forKey: savedThemeKey), !persistedTheme.isEmpty {
+            self.selectedThemeId = persistedTheme
+        }
+        if let data = defaults.data(forKey: savedUpsRelayDataKey),
+           let decoded = try? JSONDecoder().decode(LivriaUpsPickupPoint.self, from: data) {
+            self.selectedUpsPointForCheckout = decoded
+            self.selectedRelayForCheckout = "\(decoded.name) — \(decoded.address), \(decoded.postalCode) \(decoded.city)"
+        }
+
         let savedEmail = defaults.string(forKey: savedEmailKey)
         let savedUid = defaults.integer(forKey: savedUserIdKey)
 
@@ -62,6 +85,38 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
+    public func acceptTermsOfUse() {
+        defaults.set(true, forKey: acceptedTermsKey)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            hasAcceptedTermsOfUse = true
+        }
+    }
+
+    public func setTheme(_ themeId: String) {
+        let normalized = themeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "default" : themeId
+        self.selectedThemeId = normalized
+        defaults.set(normalized, forKey: savedThemeKey)
+        self.currentUser?.themeId = normalized
+    }
+
+    public func selectUpsRelayForDefaultCheckout(_ ups: LivriaUpsPickupPoint) {
+        self.selectedUpsPointForCheckout = ups
+        self.selectedCommunityRelayForCheckout = nil
+        self.selectedCommunityRelayId = nil
+        self.selectedRelayForCheckout = "\(ups.name) — \(ups.address), \(ups.postalCode) \(ups.city)"
+        if let encoded = try? JSONEncoder().encode(ups) {
+            defaults.set(encoded, forKey: savedUpsRelayDataKey)
+        }
+    }
+
+    public func selectCommunityRelayForDefaultCheckout(_ relay: LivriaCommunityRelay) {
+        self.selectedCommunityRelayForCheckout = relay
+        self.selectedCommunityRelayId = relay.id
+        self.selectedUpsPointForCheckout = nil
+        self.selectedRelayForCheckout = "\(relay.name) — \(relay.address), \(relay.postalCode) \(relay.city)"
+        defaults.removeObject(forKey: savedUpsRelayDataKey)
+    }
+
     private func getOrCreateGuestEmail() -> String {
         if let existing = defaults.string(forKey: savedGuestEmailKey), !existing.isEmpty {
             return existing
@@ -77,7 +132,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public var currentThemeId: String {
-        currentUser?.themeId ?? "default"
+        selectedThemeId
     }
 
     public var cartItemsCount: Int {
@@ -268,8 +323,18 @@ public final class LivriaStoreViewModel: ObservableObject {
 
         do {
             let boot = try await LivriaAPIClient.shared.fetchBootstrap(email: activeEmail, userId: (activeUid ?? 0) > 0 ? activeUid : nil)
-            self.currentUser = boot.user
-            self.isAuthenticated = !boot.user.isGuestAccount
+            var incomingUser = boot.user
+            let localSavedTheme = defaults.string(forKey: savedThemeKey)
+            if let localSavedTheme, !localSavedTheme.isEmpty {
+                self.selectedThemeId = localSavedTheme
+                incomingUser.themeId = localSavedTheme
+            } else if !incomingUser.themeId.isEmpty && incomingUser.themeId != "none" && incomingUser.themeId != "default" {
+                self.selectedThemeId = incomingUser.themeId
+                defaults.set(incomingUser.themeId, forKey: savedThemeKey)
+            }
+
+            self.currentUser = incomingUser
+            self.isAuthenticated = !incomingUser.isGuestAccount
             self.homeData = boot.home
             self.books = boot.books
             self.genres = boot.genres
@@ -280,13 +345,22 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.relays = boot.relays
             self.games = boot.games
             self.supportTickets = boot.supportTickets
-
-            if !boot.user.isGuestAccount {
-                defaults.set(boot.user.email, forKey: savedEmailKey)
+            if let ps = boot.paymentSettings {
+                self.paymentSettings = ps
             }
-            defaults.set(boot.user.id, forKey: savedUserIdKey)
+
+            if !incomingUser.isGuestAccount {
+                defaults.set(incomingUser.email, forKey: savedEmailKey)
+            }
+            defaults.set(incomingUser.id, forKey: savedUserIdKey)
         } catch {
             print("[LivriaStore.iOS] Erreur bootstrap: \(error.localizedDescription)")
+        }
+    }
+
+    public func refreshPaymentSettings() async {
+        if let settings: LivriaPaymentSettings = try? await LivriaAPIClient.shared.getJSON("/payment-settings") {
+            self.paymentSettings = settings
         }
     }
 
@@ -828,6 +902,7 @@ public final class LivriaStoreViewModel: ObservableObject {
         postalCode: String,
         city: String
     ) async {
+        setTheme(themeId)
         var payload = userAuthFields
         payload["displayName"] = displayName
         payload["bio"] = bio

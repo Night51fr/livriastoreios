@@ -534,8 +534,8 @@ public struct RelayPointsView: View {
     }
 
     private func selectUpsRelay(_ ups: LivriaUpsPickupPoint) {
-        store.selectedRelayForCheckout = "\(ups.name) — \(ups.address), \(ups.postalCode) \(ups.city)"
-        store.showToast("Point Relais « \(ups.name) » sélectionné pour votre livraison !")
+        store.selectUpsRelayForDefaultCheckout(ups)
+        store.showToast("Point Relais « \(ups.name) » sélectionné par défaut pour vos commandes !")
     }
 
     // MARK: - Onglet 2 : Points Relais Communautaires & Boîtes à Livres
@@ -611,9 +611,8 @@ public struct RelayPointsView: View {
 
                         HStack {
                             Button {
-                                store.selectedCommunityRelayId = pt.id
-                                store.selectedRelayForCheckout = "\(pt.name) (\(pt.city))"
-                                store.showToast("Point relais « \(pt.name) » sélectionné pour vos livraisons !")
+                                store.selectCommunityRelayForDefaultCheckout(pt)
+                                store.showToast("Point relais « \(pt.name) » sélectionné par défaut pour vos commandes !")
                             } label: {
                                 Label("Choisir pour mes commandes", systemImage: "checkmark.circle.fill")
                                     .font(.system(size: 12, weight: .bold))
@@ -659,6 +658,8 @@ public struct RelayPointsView: View {
                     TextField("Description / instructions d'accès", text: $newRelayDesc)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .livriaThemedBackground(store.currentThemeId)
             .navigationTitle("Proposer un Point Relais")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

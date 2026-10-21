@@ -8,6 +8,17 @@ public struct MainTabView: View {
     public init() {}
 
     public var body: some View {
+        Group {
+            if !store.hasAcceptedTermsOfUse {
+                LivriaStoreLegalTermsView(isFirstLaunchGate: true)
+                    .environmentObject(store)
+            } else {
+                mainAppContent
+            }
+        }
+    }
+
+    private var mainAppContent: some View {
         ZStack(alignment: .top) {
             TabView(selection: $store.selectedMainTab) {
                 HomeView()
@@ -73,6 +84,10 @@ public struct MainTabView: View {
         }
         .sheet(isPresented: $store.isShowingAuthSheet) {
             VipleLiveAuthView()
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $store.isShowingTermsReviewSheet) {
+            LivriaStoreLegalTermsView(isFirstLaunchGate: false)
                 .environmentObject(store)
         }
         .sheet(item: $store.scannedBookForDetail) { scannedBook in
@@ -411,9 +426,9 @@ public struct LivriaStoreAccountHubView: View {
                         let isSelected = store.currentThemeId == opt.id
                         Button {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                store.currentUser?.themeId = opt.id
+                                store.setTheme(opt.id)
                             }
-                            if let u = store.currentUser {
+                            if store.isAuthenticated, let u = store.currentUser {
                                 Task {
                                     await store.updateProfile(
                                         displayName: u.displayName,
@@ -489,6 +504,18 @@ public struct LivriaStoreAccountHubView: View {
                 ) {
                     ProfileView()
                 }
+
+                Button {
+                    store.isShowingTermsReviewSheet = true
+                } label: {
+                    hubActionRow(
+                        title: "Conditions Générales d'Utilisation & de Vente",
+                        subtitle: "Consultez à tout moment les conditions générales Livria et Viple Live ID",
+                        icon: "doc.text.magnifyingglass",
+                        color: .teal
+                    )
+                }
+                .buttonStyle(.plain)
 
                 if store.isAuthenticated {
                     Button(role: .destructive) {

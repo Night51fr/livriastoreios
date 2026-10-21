@@ -128,7 +128,19 @@ public struct LivriaSiteThemeOption: Identifiable, Equatable, Sendable {
     ]
 
     public static func option(for id: String) -> LivriaSiteThemeOption {
-        all.first(where: { $0.id == id.lowercased() }) ?? all[0]
+        let key = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let match = all.first(where: { $0.id == key }) {
+            return match
+        }
+        switch key {
+        case "oxford-library": return all.first(where: { $0.id == "parchment" }) ?? all[0]
+        case "kyoto-sakura": return all.first(where: { $0.id == "sakura" }) ?? all[0]
+        case "cosmic-nebula", "gothic-manor": return all.first(where: { $0.id == "cosmos" }) ?? all[0]
+        case "enchanted-forest": return all.first(where: { $0.id == "emerald" }) ?? all[0]
+        case "mediterranean-sunset": return all.first(where: { $0.id == "sunset" }) ?? all[0]
+        case "paris-rain": return all.first(where: { $0.id == "ocean" }) ?? all[0]
+        default: return all[0]
+        }
     }
 }
 
@@ -140,7 +152,7 @@ public struct LivriaThemedBackground: ViewModifier {
         ZStack {
             LinearGradient(colors: opt.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
-            LivriaPalette.background.opacity(opt.id == "default" ? 0.92 : 0.72)
+            LivriaPalette.background.opacity(opt.id == "default" ? 0.88 : 0.20)
                 .ignoresSafeArea()
             content
         }

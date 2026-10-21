@@ -162,6 +162,8 @@ public struct SupportAssistanceView: View {
                         .lineLimit(4...8)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .livriaThemedBackground(store.currentThemeId)
             .navigationTitle("Ouvrir un Ticket")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

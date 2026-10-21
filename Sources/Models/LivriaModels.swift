@@ -30,6 +30,29 @@ public struct LivriaAuthResponse: Codable, Sendable {
     public var user: LivriaUserProfile?
 }
 
+public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
+    public var paypalEnabled: Bool
+    public var applePayEnabled: Bool
+    public var googlePayEnabled: Bool
+
+    public init(paypalEnabled: Bool = true, applePayEnabled: Bool = true, googlePayEnabled: Bool = true) {
+        self.paypalEnabled = paypalEnabled
+        self.applePayEnabled = applePayEnabled
+        self.googlePayEnabled = googlePayEnabled
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case paypalEnabled, applePayEnabled, googlePayEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        paypalEnabled = (try? c.decode(Bool.self, forKey: .paypalEnabled)) ?? true
+        applePayEnabled = (try? c.decode(Bool.self, forKey: .applePayEnabled)) ?? true
+        googlePayEnabled = (try? c.decode(Bool.self, forKey: .googlePayEnabled)) ?? true
+    }
+}
+
 public struct LivriaBootstrapResponse: Codable, Sendable {
     public var ok: Bool
     public var user: LivriaUserProfile
@@ -43,6 +66,7 @@ public struct LivriaBootstrapResponse: Codable, Sendable {
     public var relays: LivriaRelaysBundle
     public var games: LivriaGamesData
     public var supportTickets: [LivriaSupportTicket]
+    public var paymentSettings: LivriaPaymentSettings?
 }
 
 public struct LivriaUserProfile: Codable, Identifiable, Equatable, Sendable {

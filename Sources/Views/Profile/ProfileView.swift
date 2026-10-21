@@ -27,11 +27,14 @@ public struct ProfileView: View {
                     profileIdentityHeaderCard
                     themePersonalizationStudioCard
                     editProfileAndAddressCard
-                    signOutCard
+                    legalTermsReviewCard
+                    if store.isAuthenticated {
+                        signOutCard
+                    }
                 }
                 .padding(16)
             }
-            .livriaThemedBackground(selectedThemeId)
+            .livriaThemedBackground(store.currentThemeId)
             .navigationTitle("Mon Profil Livria")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -118,11 +121,15 @@ public struct ProfileView: View {
 
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(LivriaSiteThemeOption.all) { opt in
-                    let isSelected = selectedThemeId == opt.id
+                    let isSelected = store.currentThemeId == opt.id
                     Button {
-                        selectedThemeId = opt.id
-                        store.currentUser?.themeId = opt.id
-                        saveChanges()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            selectedThemeId = opt.id
+                            store.setTheme(opt.id)
+                        }
+                        if store.isAuthenticated {
+                            saveChanges()
+                        }
                     } label: {
                         HStack(spacing: 10) {
                             RoundedRectangle(cornerRadius: 8)
@@ -260,6 +267,32 @@ public struct ProfileView: View {
         .livriaCard()
     }
 
+    private var legalTermsReviewCard: some View {
+        Button {
+            store.isShowingTermsReviewSheet = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Revoir les Conditions Générales (CGU / CGV)")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                    Text("Conditions Générales d'Utilisation & de Vente Livria et Viple Live ID")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(LivriaPalette.inkMuted)
+            }
+            .livriaCard(padding: 14)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var signOutCard: some View {
         Button(role: .destructive) {
             store.signOut()
@@ -277,13 +310,13 @@ public struct ProfileView: View {
     }
 
     private func populateFieldsFromStore() {
+        selectedThemeId = store.currentThemeId
         guard let u = store.currentUser else { return }
         displayName = u.displayName
         bio = u.bio
         motto = u.motto
         favoriteGenres = u.favoriteGenres
         yearlyGoal = max(1, u.yearlyGoal)
-        selectedThemeId = u.themeId
         firstName = u.firstName
         lastName = u.lastName
         phone = u.phone
@@ -293,6 +326,8 @@ public struct ProfileView: View {
     }
 
     private func saveChanges() {
+        store.setTheme(selectedThemeId)
+        guard store.isAuthenticated else { return }
         Task {
             await store.updateProfile(
                 displayName: displayName,
