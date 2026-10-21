@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Boutique Livria Store (Catalogue Neuf & Occasion + Recherche Double Livres / Membres + Scanner ISBN)
 
@@ -445,18 +448,23 @@ public struct BoutiqueView: View {
 
                         Spacer()
 
-                        if let url = URL(string: member.socialProfileUrl) {
-                            Link(destination: url) {
-                                Label("Profil", systemImage: "arrow.up.right.square.fill")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(Capsule().fill(LivriaPalette.primarySoft))
-                                    .foregroundStyle(LivriaPalette.primaryDeep)
-                            }
+                        Button {
+                            openMemberInLivriaSocial(member: member)
+                        } label: {
+                            Label("Profil", systemImage: "person.crop.circle.badge.arrow.forward")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(LivriaPalette.primarySoft))
+                                .foregroundStyle(LivriaPalette.primaryDeep)
                         }
+                        .buttonStyle(.plain)
                     }
                     .livriaCard(padding: 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        openMemberInLivriaSocial(member: member)
+                    }
                 }
             }
             .padding(16)
@@ -465,6 +473,23 @@ public struct BoutiqueView: View {
             if store.searchedMembers.isEmpty {
                 await store.searchMembers(query: searchText)
             }
+        }
+    }
+
+    private func openMemberInLivriaSocial(member: LivriaMemberSummary) {
+        let encodedName = member.displayName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let appUrl = URL(string: "livriasocial://profile/\(member.id)?name=\(encodedName)") {
+            #if canImport(UIKit)
+            UIApplication.shared.open(appUrl, options: [:]) { opened in
+                if !opened, let fallbackWebUrl = URL(string: member.socialProfileUrl) {
+                    UIApplication.shared.open(fallbackWebUrl, options: [:], completionHandler: nil)
+                }
+            }
+            #endif
+        } else if let fallbackWebUrl = URL(string: member.socialProfileUrl) {
+            #if canImport(UIKit)
+            UIApplication.shared.open(fallbackWebUrl, options: [:], completionHandler: nil)
+            #endif
         }
     }
 }

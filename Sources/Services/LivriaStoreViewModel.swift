@@ -119,7 +119,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     /// Algorithme de recommandation : si l'algorithme a moins de 5 livres à proposer, affiche les plus récemment ajoutés
-    public var smartRecommendationResult: (books: [LivriaBook], isRecentFallback: Bool) {
+    public var smartRecommendationResult: (books: [LivriaBook], isFallbackToRecent: Bool, subtitle: String) {
         let favGenres = (currentUser?.favoriteGenres ?? "")
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -135,9 +135,17 @@ public final class LivriaStoreViewModel: ObservableObject {
             algoBooks = serverRecs
         }
         if algoBooks.count < 5 {
-            return (Array(newestCatalogBooks.prefix(12)), true)
+            return (
+                books: Array(newestCatalogBooks.prefix(12)),
+                isFallbackToRecent: true,
+                subtitle: "Découvrez les derniers ouvrages fraîchement arrivés dans le catalogue Livria"
+            )
         }
-        return (Array(algoBooks.prefix(12)), false)
+        return (
+            books: Array(algoBooks.prefix(12)),
+            isFallbackToRecent: false,
+            subtitle: "Sélection personnalisée selon vos genres favoris et vos lectures"
+        )
     }
 
     /// Recherche un ISBN directement dans le catalogue Livria (local puis serveur Livria)

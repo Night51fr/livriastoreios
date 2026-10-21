@@ -56,7 +56,6 @@ public struct VipleLiveAuthView: View {
                         registerFormCard
                     }
                     guestContinueCard
-                    ecosystemFooter
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
@@ -467,18 +466,6 @@ public struct VipleLiveAuthView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.10)))
         }
-    }
-
-    private var ecosystemFooter: some View {
-        VStack(spacing: 6) {
-            Text("Livria Store • Votre librairie Neuf, Occasion & Troc")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(LivriaPalette.inkMuted)
-            Text("Paiements sécurisés et expéditions suivies partout en France")
-                .font(.system(size: 10.5))
-                .foregroundStyle(LivriaPalette.inkMuted.opacity(0.8))
-        }
-        .multilineTextAlignment(.center)
     }
 
     private func submitSignup() {
