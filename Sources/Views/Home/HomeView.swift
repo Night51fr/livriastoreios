@@ -633,7 +633,7 @@ public struct HomeView: View {
     }
 }
 
-// MARK: - Logo Horizontal Officiel « Livria Store » (Fond Transparent • Couleurs identiques aux logos Livria)
+// MARK: - Logo Horizontal Officiel « Livria Store » (Fond Transparent • Montserrat Black #7c4dff -> #ff5fa2)
 
 public struct LivriaStoreHorizontalLogoView: View {
     public init() {}
@@ -643,43 +643,22 @@ public struct LivriaStoreHorizontalLogoView: View {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFit()
-                .frame(height: 28)
+                .frame(height: 24)
                 .accessibilityLabel("Livria Store")
         } else {
-            HStack(spacing: 6) {
-                Text("Livria")
-                    .font(.system(size: 21, weight: .black, design: .serif))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.486, green: 0.302, blue: 1.0),
-                                Color(red: 0.925, green: 0.282, blue: 0.600)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+            Text("Livria Store")
+                .font(.system(size: 21, weight: .black, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 124.0 / 255.0, green: 77.0 / 255.0, blue: 1.0),
+                            Color(red: 1.0, green: 95.0 / 255.0, blue: 162.0 / 255.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
-                Text("STORE")
-                    .font(.system(size: 11, weight: .heavy, design: .rounded))
-                    .tracking(1.4)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.486, green: 0.302, blue: 1.0),
-                                        Color(red: 0.925, green: 0.282, blue: 0.600)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    )
-                    .foregroundStyle(.white)
-            }
-            .accessibilityLabel("Livria Store")
+                )
+                .accessibilityLabel("Livria Store")
         }
     }
 }
