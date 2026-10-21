@@ -106,16 +106,14 @@ public struct BoutiqueView: View {
                     Button {
                         store.isShowingCartSheet = true
                     } label: {
-                        HStack(spacing: 5) {
+                        if store.cartItemsCount > 0 {
+                            Text("\(Image(systemName: "cart.fill")) \(store.cartItemsCount)")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        } else {
                             Image(systemName: "cart.fill")
-                            Text("\(store.cartItemsCount)")
-                                .font(.system(size: 12, weight: .bold))
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(LivriaPalette.primarySoft))
-                        .foregroundStyle(LivriaPalette.primary)
                     }
+                    .tint(LivriaPalette.primary)
                 }
             }
             .navigationDestination(item: $selectedBook) { book in
@@ -269,126 +267,131 @@ public struct BoutiqueView: View {
     // MARK: - Carte Livre Boutique (Neuf & Occasion)
 
     private func boutiqueBookCard(book: LivriaBook) -> some View {
-        Button {
-            selectedBook = book
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack(alignment: .topLeading) {
-                    LivriaBookCoverView(
-                        coverUrl: book.coverUrl,
-                        title: book.title,
-                        width: 144,
-                        height: 204,
-                        cornerRadius: 14
-                    )
-                    .frame(maxWidth: .infinity)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                selectedBook = book
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    ZStack(alignment: .topLeading) {
+                        LivriaBookCoverView(
+                            coverUrl: book.coverUrl,
+                            title: book.title,
+                            width: 144,
+                            height: 204,
+                            cornerRadius: 14
+                        )
+                        .frame(maxWidth: .infinity)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if book.hasNewStock {
+                                Text("✨ Neuf")
+                                    .font(.system(size: 9.5, weight: .heavy))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(LivriaPalette.mint))
+                            }
+                            if book.hasUsedStock {
+                                Text("♻️ \(book.usedConditionLabel)")
+                                    .font(.system(size: 9.5, weight: .heavy))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(LivriaPalette.usedAmber))
+                            }
+                        }
+                        .padding(6)
+                    }
+
+                    Text(book.title)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(LivriaPalette.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    Text(book.author)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                        .lineLimit(1)
+
+                    // Affichage des prix Neuf et/ou Occasion
+                    VStack(alignment: .leading, spacing: 2) {
                         if book.hasNewStock {
-                            Text("✨ Neuf")
-                                .font(.system(size: 9.5, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(LivriaPalette.mint))
+                            HStack(spacing: 4) {
+                                Text("Neuf :")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(LivriaPalette.inkMuted)
+                                Text(String(format: "%.2f €", book.price))
+                                    .font(.system(size: 14.5, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(LivriaPalette.primary)
+                            }
                         }
                         if book.hasUsedStock {
-                            Text("♻️ \(book.usedConditionLabel)")
-                                .font(.system(size: 9.5, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(LivriaPalette.usedAmber))
-                        }
-                    }
-                    .padding(6)
-                }
-
-                Text(book.title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(LivriaPalette.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                Text(book.author)
-                    .font(.system(size: 12))
-                    .foregroundStyle(LivriaPalette.inkMuted)
-                    .lineLimit(1)
-
-                // Affichage des prix Neuf et/ou Occasion
-                VStack(alignment: .leading, spacing: 2) {
-                    if book.hasNewStock {
-                        HStack(spacing: 4) {
-                            Text("Neuf :")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(LivriaPalette.inkMuted)
-                            Text(String(format: "%.2f €", book.price))
-                                .font(.system(size: 14.5, weight: .heavy, design: .rounded))
-                                .foregroundStyle(LivriaPalette.primary)
-                        }
-                    }
-                    if book.hasUsedStock {
-                        HStack(spacing: 4) {
-                            Text("Occasion :")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(LivriaPalette.usedAmber)
-                            Text(String(format: "%.2f €", book.effectiveUsedPrice))
-                                .font(.system(size: 13.5, weight: .heavy, design: .rounded))
-                                .foregroundStyle(LivriaPalette.usedAmber)
-                        }
-                    }
-                }
-
-                HStack {
-                    if book.hasNewStock && book.hasUsedStock {
-                        Menu {
-                            Button("✨ Ajouter Neuf (\(String(format: "%.2f €", book.price)))") {
-                                Task {
-                                    await store.addToCart(bookId: book.id, format: "Broché", quantity: 1)
-                                }
-                            }
-                            Button("♻️ Ajouter \(book.usedConditionLabel) (\(String(format: "%.2f €", book.effectiveUsedPrice)))") {
-                                Task {
-                                    await store.addToCart(bookId: book.id, format: book.cartFormatForUsed, quantity: 1)
-                                }
-                            }
-                        } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "cart.badge.plus")
-                                Text("Choisir l'état")
+                                Text("Occasion :")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(LivriaPalette.usedAmber)
+                                Text(String(format: "%.2f €", book.effectiveUsedPrice))
+                                    .font(.system(size: 13.5, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(LivriaPalette.usedAmber)
                             }
-                            .font(.system(size: 11.5, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(LivriaPalette.primary))
-                            .foregroundStyle(.white)
-                        }
-                    } else {
-                        Button {
-                            let fmt = book.hasNewStock ? "Broché" : book.cartFormatForUsed
-                            Task {
-                                await store.addToCart(bookId: book.id, format: fmt, quantity: 1)
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "cart.badge.plus")
-                                Text(book.hasNewStock ? "Ajouter (Neuf)" : "Ajouter (Occasion)")
-                            }
-                            .font(.system(size: 11.5, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(book.hasNewStock ? LivriaPalette.primary : LivriaPalette.usedAmber))
-                            .foregroundStyle(.white)
                         }
                     }
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LivriaPalette.cardPaper))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
-            .shadow(color: LivriaPalette.primary.opacity(0.06), radius: 8, x: 0, y: 4)
+            .buttonStyle(.plain)
+
+            HStack {
+                if book.hasNewStock && book.hasUsedStock {
+                    Menu {
+                        Button("✨ Ajouter Neuf (\(String(format: "%.2f €", book.price)))") {
+                            Task {
+                                await store.addToCart(bookId: book.id, format: "Broché", quantity: 1)
+                            }
+                        }
+                        Button("♻️ Ajouter \(book.usedConditionLabel) (\(String(format: "%.2f €", book.effectiveUsedPrice)))") {
+                            Task {
+                                await store.addToCart(bookId: book.id, format: book.cartFormatForUsed, quantity: 1)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "cart.fill")
+                                .symbolRenderingMode(.monochrome)
+                            Text("Choisir l'état")
+                        }
+                        .font(.system(size: 11.5, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(LivriaPalette.primary))
+                        .foregroundStyle(.white)
+                    }
+                } else {
+                    Button {
+                        let fmt = book.hasNewStock ? "Broché" : book.cartFormatForUsed
+                        Task {
+                            await store.addToCart(bookId: book.id, format: fmt, quantity: 1)
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "cart.fill")
+                                .symbolRenderingMode(.monochrome)
+                            Text(book.hasNewStock ? "Ajouter (Neuf)" : "Ajouter (Occasion)")
+                        }
+                        .font(.system(size: 11.5, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(book.hasNewStock ? LivriaPalette.primary : LivriaPalette.usedAmber))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LivriaPalette.cardPaper))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
+        .shadow(color: LivriaPalette.primary.opacity(0.06), radius: 8, x: 0, y: 4)
     }
 
     // MARK: - Résultats de Recherche de Membres Publics

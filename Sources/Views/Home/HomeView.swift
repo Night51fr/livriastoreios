@@ -68,33 +68,27 @@ public struct HomeView: View {
                             .foregroundStyle(LivriaPalette.ink)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 10) {
-                        Button {
-                            showingISBNScanner = true
-                        } label: {
-                            Image(systemName: "barcode.viewfinder")
-                                .font(.system(size: 17, weight: .bold))
-                                .foregroundStyle(LivriaPalette.primary)
-                        }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showingISBNScanner = true
+                    } label: {
+                        Image(systemName: "barcode.viewfinder")
+                            .symbolRenderingMode(.monochrome)
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    .tint(LivriaPalette.primary)
 
-                        Button {
-                            store.isShowingCartSheet = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "cart.fill")
-                                if store.cartItemsCount > 0 {
-                                    Text("\(store.cartItemsCount)")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(LivriaPalette.coral))
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                            .foregroundStyle(LivriaPalette.primary)
+                    Button {
+                        store.isShowingCartSheet = true
+                    } label: {
+                        if store.cartItemsCount > 0 {
+                            Text("\(Image(systemName: "cart.fill")) \(store.cartItemsCount)")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        } else {
+                            Image(systemName: "cart.fill")
                         }
                     }
+                    .tint(LivriaPalette.primary)
                 }
             }
             .refreshable {
@@ -131,7 +125,8 @@ public struct HomeView: View {
                         .foregroundStyle(.white)
 
                     HStack(spacing: 5) {
-                        Image(systemName: store.isAuthenticated ? "checkmark.seal.fill" : "cart.badge.clock")
+                        Image(systemName: store.isAuthenticated ? "checkmark.seal.fill" : "bag.fill")
+                            .symbolRenderingMode(.monochrome)
                             .font(.caption)
                             .foregroundStyle(LivriaPalette.gold)
                         Text(store.isAuthenticated
@@ -364,86 +359,90 @@ public struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(books) { book in
-                        Button {
-                            selectedBook = book
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ZStack(alignment: .topLeading) {
-                                    LivriaBookCoverView(
-                                        coverUrl: book.coverUrl,
-                                        title: book.title,
-                                        width: 122,
-                                        height: 176,
-                                        cornerRadius: 14
-                                    )
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button {
+                                selectedBook = book
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ZStack(alignment: .topLeading) {
+                                        LivriaBookCoverView(
+                                            coverUrl: book.coverUrl,
+                                            title: book.title,
+                                            width: 122,
+                                            height: 176,
+                                            cornerRadius: 14
+                                        )
 
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        if book.hasNewStock {
-                                            Text("✨ Neuf")
-                                                .font(.system(size: 9, weight: .heavy))
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2.5)
-                                                .background(Capsule().fill(LivriaPalette.mint))
-                                                .foregroundStyle(.white)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            if book.hasNewStock {
+                                                Text("✨ Neuf")
+                                                    .font(.system(size: 9, weight: .heavy))
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2.5)
+                                                    .background(Capsule().fill(LivriaPalette.mint))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            if book.hasUsedStock {
+                                                Text("♻️ \(book.usedConditionLabel)")
+                                                    .font(.system(size: 8.5, weight: .heavy))
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2.5)
+                                                    .background(Capsule().fill(LivriaPalette.usedAmber))
+                                                    .foregroundStyle(.white)
+                                            }
                                         }
-                                        if book.hasUsedStock {
-                                            Text("♻️ \(book.usedConditionLabel)")
-                                                .font(.system(size: 8.5, weight: .heavy))
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2.5)
-                                                .background(Capsule().fill(LivriaPalette.usedAmber))
-                                                .foregroundStyle(.white)
-                                        }
+                                        .padding(6)
                                     }
-                                    .padding(6)
+
+                                    Text(book.title)
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(LivriaPalette.ink)
+                                        .lineLimit(1)
+                                        .frame(width: 122, alignment: .leading)
+
+                                    Text(book.author)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(LivriaPalette.inkMuted)
+                                        .lineLimit(1)
+                                        .frame(width: 122, alignment: .leading)
                                 }
+                            }
+                            .buttonStyle(.plain)
 
-                                Text(book.title)
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(LivriaPalette.ink)
-                                    .lineLimit(1)
-                                    .frame(width: 122, alignment: .leading)
-
-                                Text(book.author)
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(LivriaPalette.inkMuted)
-                                    .lineLimit(1)
-                                    .frame(width: 122, alignment: .leading)
-
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        if book.hasNewStock {
-                                            Text(String(format: "%.2f €", book.price))
-                                                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                                                .foregroundStyle(LivriaPalette.primary)
-                                        }
-                                        if book.hasUsedStock {
-                                            Text(String(format: "Occ. %.2f €", book.effectiveUsedPrice))
-                                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                                .foregroundStyle(LivriaPalette.usedAmber)
-                                        }
-                                    }
-                                    Spacer()
-                                    Button {
-                                        let formatToUse = book.hasNewStock ? "Broché" : book.cartFormatForUsed
-                                        Task {
-                                            await store.addToCart(bookId: book.id, format: formatToUse, quantity: 1)
-                                        }
-                                    } label: {
-                                        Image(systemName: "cart.badge.plus")
-                                            .font(.system(size: 13, weight: .bold))
-                                            .padding(7)
-                                            .background(Circle().fill(LivriaPalette.primarySoft))
+                            HStack {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    if book.hasNewStock {
+                                        Text(String(format: "%.2f €", book.price))
+                                            .font(.system(size: 13, weight: .heavy, design: .rounded))
                                             .foregroundStyle(LivriaPalette.primary)
                                     }
+                                    if book.hasUsedStock {
+                                        Text(String(format: "Occ. %.2f €", book.effectiveUsedPrice))
+                                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                            .foregroundStyle(LivriaPalette.usedAmber)
+                                    }
                                 }
-                                .frame(width: 122)
+                                Spacer()
+                                Button {
+                                    let formatToUse = book.hasNewStock ? "Broché" : book.cartFormatForUsed
+                                    Task {
+                                        await store.addToCart(bookId: book.id, format: formatToUse, quantity: 1)
+                                    }
+                                } label: {
+                                    Image(systemName: "cart.fill")
+                                        .symbolRenderingMode(.monochrome)
+                                        .font(.system(size: 13, weight: .bold))
+                                        .padding(7)
+                                        .background(Circle().fill(LivriaPalette.primarySoft))
+                                        .foregroundStyle(LivriaPalette.primary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LivriaPalette.cardPaper))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
+                            .frame(width: 122)
                         }
-                        .buttonStyle(.plain)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LivriaPalette.cardPaper))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
                     }
                 }
                 .padding(.vertical, 4)

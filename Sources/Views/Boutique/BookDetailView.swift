@@ -260,8 +260,9 @@ public struct BookDetailView: View {
                     await store.addToCart(bookId: book.id, format: activeCartFormat, quantity: 1)
                 }
             } label: {
-                HStack {
-                    Image(systemName: "cart.fill.badge.plus")
+                HStack(spacing: 8) {
+                    Image(systemName: "cart.fill")
+                        .symbolRenderingMode(.monochrome)
                     Text("Ajouter au panier • \(activeCartFormat) (\(String(format: "%.2f €", displayedPrice)))")
                         .font(.system(size: 14.5, weight: .bold, design: .rounded))
                 }
@@ -279,6 +280,7 @@ public struct BookDetailView: View {
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
+            .buttonStyle(.plain)
 
             HStack(spacing: 10) {
                 Button {
