@@ -30,8 +30,10 @@
 	<string>18.0</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Livria Store utilise l'appareil photo pour scanner instantanément le code-barres ISBN de vos livres.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Livria Store utilise votre photothèque pour importer et recadrer votre photo de profil Viple Live ID.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Livria Store utilise votre position pour afficher automatiquement les points relais UPS les plus proches de vous.</string>
+	<string>Livria Store utilise votre position pour afficher automatiquement les points relais UPS et Viple Taker les plus proches de vous.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -48,6 +50,7 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>livriasocial</string>
+		<string>livriamarketplace</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

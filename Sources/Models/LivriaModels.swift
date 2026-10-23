@@ -905,3 +905,38 @@ public struct LivriaSupportTicketDetailResponse: Codable, Sendable {
     public var ok: Bool
     public var ticket: LivriaSupportTicket
 }
+
+// MARK: - Candidature & Statut « Devenir Viple Taker » (Point Relais Particulier — 1,00 € / colis)
+
+public struct LivriaVipleTakerApplication: Codable, Identifiable, Equatable, Sendable {
+    public var id: Int
+    public var reference: String
+    public var userId: Int?
+    public var email: String
+    public var displayName: String
+    public var firstName: String
+    public var lastName: String
+    public var phone: String
+    public var relayName: String
+    public var address: String
+    public var postalCode: String
+    public var city: String
+    public var housingType: String
+    public var storageCapacity: String
+    public var openingHours: String
+    public var motivationAndAccessNotes: String
+    public var status: String
+    public var requestedAdditionalInfo: String?
+    public var applicantSupplementaryResponse: String?
+    public var adminNotes: String?
+    public var linkedRelayPointId: Int?
+    public var sourceApp: String?
+}
+
+public struct LivriaTakerStatusResponse: Codable, Sendable {
+    public var ok: Bool
+    public var hasApplication: Bool
+    public var application: LivriaVipleTakerApplication?
+    public var validatedTakerRelays: [LivriaCommunityRelay]?
+}
+

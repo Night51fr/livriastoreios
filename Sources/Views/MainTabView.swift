@@ -693,6 +693,20 @@ public struct LivriaStoreAccountHubView: View {
                 }
                 .buttonStyle(.plain)
 
+                Button {
+                    store.openLivriaMarketplaceApp()
+                } label: {
+                    shortcutTile(title: "Marketplace", subtitle: "Acheter & Vendre", icon: "storefront.fill", color: LivriaPalette.primary)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
+                    VipleTakerApplicationView()
+                } label: {
+                    shortcutTile(title: "Viple Taker", subtitle: "Relais 1€/colis", icon: "shippingbox.and.arrow.backward.fill", color: LivriaPalette.mint)
+                }
+                .buttonStyle(.plain)
+
                 if store.isAuthenticated {
                     Button {
                         store.selectedMainTab = 2
@@ -770,6 +784,15 @@ public struct LivriaStoreAccountHubView: View {
                     color: .orange
                 ) {
                     RelayPointsView()
+                }
+
+                hubSectionLink(
+                    title: "Devenir Viple Taker (Point Relais Particulier — 1 €/colis)",
+                    subtitle: "Recevez les colis Viple Delivery & UPS chez vous, scannez via Looby Taker et gagnez 1,00 € par colis remis",
+                    icon: "shippingbox.and.arrow.backward.fill",
+                    color: LivriaPalette.mint
+                ) {
+                    VipleTakerApplicationView()
                 }
 
                 if store.isAuthenticated {

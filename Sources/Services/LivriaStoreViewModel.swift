@@ -67,6 +67,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var games: LivriaGamesData? = nil
     @Published public var supportTickets: [LivriaSupportTicket] = []
     @Published public var paymentSettings: LivriaPaymentSettings = LivriaPaymentSettings()
+    @Published public var takerApplication: LivriaVipleTakerApplication? = nil
 
     // Recherche de membres (section Membres de la barre de recherche -> redirige vers Livria Social)
     @Published public var searchedMembers: [LivriaMemberSearchResult] = []
@@ -1273,6 +1274,122 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
+    // MARK: - 7b. Candidature & Statut « Devenir Viple Taker » (Point Relais Particulier — 1,00 € / colis)
+
+    public func fetchTakerApplicationStatus() async {
+        var items: [URLQueryItem] = []
+        if let email = currentUser?.email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        if let uid = currentUser?.id, uid > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(uid)))
+        }
+        do {
+            let res: LivriaTakerStatusResponse = try await LivriaAPIClient.shared.getJSON("/taker/status", queryItems: items)
+            self.takerApplication = res.application
+        } catch { }
+    }
+
+    public func submitTakerApplication(
+        firstName: String,
+        lastName: String,
+        phone: String,
+        relayName: String,
+        address: String,
+        postalCode: String,
+        city: String,
+        housingType: String,
+        storageCapacity: String,
+        openingHours: String,
+        motivationAndAccessNotes: String,
+        supplementaryResponse: String = ""
+    ) async -> Bool {
+        var payload = userAuthFields
+        payload["applicationId"] = takerApplication?.id ?? 0
+        payload["displayName"] = currentUser?.displayName ?? "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
+        payload["firstName"] = firstName
+        payload["lastName"] = lastName
+        payload["phone"] = phone
+        payload["relayName"] = relayName
+        payload["address"] = address
+        payload["postalCode"] = postalCode
+        payload["city"] = city
+        payload["housingType"] = housingType
+        payload["storageCapacity"] = storageCapacity
+        payload["openingHours"] = openingHours
+        payload["motivationAndAccessNotes"] = motivationAndAccessNotes
+        payload["supplementaryResponse"] = supplementaryResponse
+        payload["sourceApp"] = "Livria Store"
+
+        do {
+            let res = try await LivriaAPIClient.shared.postRaw("/taker/apply", body: payload)
+            let msg = (res["message"] as? String) ?? "Votre candidature Viple Taker (1 €/colis) a été envoyée !"
+            showToast(msg)
+            await fetchTakerApplicationStatus()
+            await refreshBootstrap()
+            return true
+        } catch {
+            showToast(error.localizedDescription)
+            return false
+        }
+    }
+
+    public func cancelTakerApplication() async -> Bool {
+        var payload = userAuthFields
+        payload["applicationId"] = takerApplication?.id ?? 0
+        do {
+            let res = try await LivriaAPIClient.shared.postRaw("/taker/cancel", body: payload)
+            let msg = (res["message"] as? String) ?? "Votre demande Viple Taker a été annulée."
+            showToast(msg)
+            await fetchTakerApplicationStatus()
+            await refreshBootstrap()
+            return true
+        } catch {
+            showToast(error.localizedDescription)
+            return false
+        }
+    }
+
+    public func uploadCroppedAvatar(imageData: Data) async -> Bool {
+        var payload = userAuthFields
+        payload["extension"] = "jpg"
+        payload["base64Data"] = imageData.base64EncodedString()
+        do {
+            let res = try await LivriaAPIClient.shared.postRaw("/profile/avatar", body: payload)
+            if let avatarUrl = res["avatarUrl"] as? String, !avatarUrl.isEmpty {
+                self.currentUser?.avatarUrl = avatarUrl
+            }
+            showToast((res["message"] as? String) ?? "Photo de profil recadrée et enregistrée !")
+            await refreshBootstrap()
+            return true
+        } catch {
+            showToast(error.localizedDescription)
+            return false
+        }
+    }
+
+    public func openLivriaMarketplaceApp() {
+        #if canImport(UIKit)
+        var components = URLComponents(string: "livriamarketplace://home")!
+        if isAuthenticated, let user = currentUser, !user.isGuestAccount {
+            components.queryItems = [
+                URLQueryItem(name: "ssoUid", value: String(user.id)),
+                URLQueryItem(name: "ssoEmail", value: user.email),
+                URLQueryItem(name: "ssoName", value: user.displayName),
+                URLQueryItem(name: "ssoAvatar", value: user.avatarUrl),
+                URLQueryItem(name: "ssoSource", value: "Livria Store")
+            ]
+        }
+        if let appUrl = components.url {
+            UIApplication.shared.open(appUrl, options: [:]) { success in
+                if !success, let webFallback = URL(string: "https://livria.store") {
+                    UIApplication.shared.open(webFallback)
+                }
+            }
+        }
+        #endif
+    }
+
     // MARK: - 8. Jeux Littéraires XP
 
     public func claimDailyGameBonus() async {
@@ -1443,6 +1560,16 @@ public final class LivriaStoreViewModel: ObservableObject {
 
         Task {
             await checkCrossAppVipleAccount(forcePrompt: true)
+        }
+
+        // Ouverture directe de l'onglet Troc depuis Livria Marketplace (livriastore://troc)
+        if host == "troc" || host == "trades" || pathParts.contains(where: { $0.lowercased() == "troc" || $0.lowercased() == "trades" }) {
+            selectedMainTab = 2
+            return
+        }
+        if host == "taker" || host == "relays" || pathParts.contains(where: { $0.lowercased() == "taker" || $0.lowercased() == "relays" }) {
+            selectedMainTab = 4
+            return
         }
 
         var extractedBookId: Int? = nil

@@ -118,6 +118,51 @@ public struct RelayPointsView: View {
     public var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
+                NavigationLink {
+                    VipleTakerApplicationView()
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(LivriaPalette.gold)
+                                .frame(width: 46, height: 46)
+                            Image(systemName: "shippingbox.and.arrow.backward.fill")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(.black)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text("Devenir Viple Taker (1,00 € / colis)")
+                                    .font(.system(size: 14.5, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                if let app = store.takerApplication, app.status != "Annulée" {
+                                    Text(app.status)
+                                        .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(LivriaPalette.gold))
+                                        .foregroundStyle(.black)
+                                }
+                            }
+                            Text("Devenez Point Relais Particulier Livria chez vous (Viple Delivery & UPS • Scan Looby Taker)")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.90))
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(LivriaPalette.gold)
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(LivriaPalette.heroGradient)
+                    )
+                }
+                .buttonStyle(.plain)
+
                 Picker("Type de Point Relais", selection: $selectedTab) {
                     ForEach(RelayTab.allCases, id: \.self) { t in
                         Text(t.rawValue).tag(t)
@@ -138,6 +183,7 @@ public struct RelayPointsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await initialLoadRelays()
+            await store.fetchTakerApplicationStatus()
         }
         .sheet(isPresented: $showingAddCommunityRelay) {
             addCommunityRelaySheet
@@ -579,12 +625,13 @@ public struct RelayPointsView: View {
                 ForEach(filteredCommunityRelays) { pt in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text(pt.type)
+                            let isTaker = pt.type.localizedCaseInsensitiveContains("taker") || pt.name.localizedCaseInsensitiveContains("taker")
+                            Text(isTaker ? "🏠 Viple Taker Validé • Particulier" : pt.type)
                                 .font(.system(size: 10.5, weight: .bold))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Capsule().fill(LivriaPalette.primarySoft))
-                                .foregroundStyle(LivriaPalette.primary)
+                                .background(Capsule().fill(isTaker ? LivriaPalette.goldSoft : LivriaPalette.primarySoft))
+                                .foregroundStyle(isTaker ? Color(red: 0.58, green: 0.30, blue: 0.02) : LivriaPalette.primary)
                             Spacer()
                             Text("\(pt.postalCode) \(pt.city)")
                                 .font(.system(size: 12, weight: .bold))

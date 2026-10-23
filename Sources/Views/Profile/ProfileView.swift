@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - Mon Profil Livria & Studio de Personnalisation Viple Live ID (ProfileView)
 
@@ -19,12 +20,19 @@ public struct ProfileView: View {
     @State private var city: String = ""
     @State private var showingDeleteAccountConfirmation: Bool = false
 
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var selectedImageForCrop: UIImage? = nil
+    @State private var isShowingAvatarCropper: Bool = false
+    @State private var isUploadingAvatar: Bool = false
+
     public init() {}
 
     public var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
+                    quickAccessEcosystemCard
+
                     if !store.isAuthenticated {
                         guestRestrictedProfileCard
                     } else {
@@ -44,6 +52,34 @@ public struct ProfileView: View {
             .onAppear {
                 populateFieldsFromStore()
             }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
+                        await MainActor.run {
+                            selectedImageForCrop = uiImage
+                            isShowingAvatarCropper = true
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $isShowingAvatarCropper) {
+                if let img = selectedImageForCrop {
+                    LivriaAvatarCropperSheet(image: img) { croppedData in
+                        isShowingAvatarCropper = false
+                        isUploadingAvatar = true
+                        Task {
+                            _ = await store.uploadCroppedAvatar(jpegData: croppedData)
+                            await MainActor.run {
+                                isUploadingAvatar = false
+                            }
+                        }
+                    } onCancel: {
+                        isShowingAvatarCropper = false
+                    }
+                }
+            }
             .alert("Êtes-vous sûr de vouloir supprimer votre compte Viple Live ID ?", isPresented: $showingDeleteAccountConfirmation) {
                 Button("Annuler", role: .cancel) {}
                 Button("Oui, supprimer définitivement", role: .destructive) {
@@ -55,6 +91,130 @@ public struct ProfileView: View {
                 Text("Êtes-vous sûr de vouloir supprimer définitivement votre compte Viple Live ID ? Cette action est irréversible et entraînera la suppression de votre profil et de vos données associées.")
             }
         }
+    }
+
+    // MARK: - Accès Rapide Écosystème Livria (Marketplace, Livria Social, Viple Taker)
+
+    private var quickAccessEcosystemCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.circle.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+                Text("Accès rapide")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+                Spacer()
+                Text("Écosystème Livria")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(LivriaPalette.primarySoft))
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    store.openLivriaMarketplaceApp()
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "bag.fill")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(LivriaPalette.primary))
+                            Spacer()
+                            Image(systemName: "arrow.up.right.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(LivriaPalette.primary)
+                        }
+                        Text("Marketplace")
+                            .font(.system(size: 13.5, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaPalette.ink)
+                        Text("Livres, CD/DVD, Goodies & Vêtements")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                            .lineLimit(2)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.primarySoft.opacity(0.55)))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaPalette.primary.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    store.openLivriaSocialApp()
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(LivriaPalette.coral))
+                            Spacer()
+                            Image(systemName: "arrow.up.right.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(LivriaPalette.coral)
+                        }
+                        Text("Livria Social")
+                            .font(.system(size: 13.5, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaPalette.ink)
+                        Text("Communauté, Clubs & Messagerie")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                            .lineLimit(2)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.background))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaPalette.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                store.isShowingTakerSheet = true
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(LivriaPalette.primary)
+                            .frame(width: 38, height: 38)
+                        Image(systemName: "shippingbox.and.arrow.backward.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Devenir Viple Taker (Point Relais Particulier)")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(LivriaPalette.ink)
+                            Text("1,00 € / colis")
+                                .font(.system(size: 10, weight: .black))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.green.opacity(0.15)))
+                                .foregroundStyle(.green)
+                        }
+                        Text("Réceptionnez les colis Livria chez vous et gagnez 1,00 € par colis remis")
+                            .font(.system(size: 11))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(LivriaPalette.primary)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.background))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaPalette.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .livriaCard()
     }
 
     private var guestRestrictedProfileCard: some View {
@@ -142,21 +302,25 @@ public struct ProfileView: View {
                 Spacer()
             }
 
-            if let url = URL(string: "\(LivriaURLResolver.identityWebURL)/compte") {
-                Link(destination: url) {
-                    HStack {
-                        Image(systemName: "person.crop.circle.fill.badge.plus")
-                        Text("Changer ma photo de profil")
-                            .font(.system(size: 13.5, weight: .bold))
-                        Spacer()
-                        Image(systemName: "arrow.up.right.square.fill")
+            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                HStack {
+                    if isUploadingAvatar {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "camera.crop.circle.fill")
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.18)))
-                    .foregroundStyle(.white)
+                    Text(isUploadingAvatar ? "Envoi de la photo en cours..." : "Uploader & Recadrer ma photo de profil")
+                        .font(.system(size: 13.5, weight: .bold))
+                    Spacer()
+                    Image(systemName: "crop")
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.18)))
+                .foregroundStyle(.white)
             }
+            .disabled(isUploadingAvatar)
         }
         .padding(20)
         .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(LivriaPalette.heroGradient))
