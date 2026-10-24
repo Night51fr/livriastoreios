@@ -26,6 +26,11 @@ public final class LivriaAPIClient {
 
     private func applyVipleDeviceHeaders(to req: inout URLRequest) {
         req.setValue("Livria Store", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
+        req.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "X-Viple-Request-Id")
+        if req.httpMethod == "POST" {
+            req.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "X-Idempotency-Key")
+        }
         #if canImport(UIKit)
         if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
             req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
@@ -410,5 +415,97 @@ public final class LivriaAPIClient {
             payload["orderId"] = orderId
         }
         return try await postJSON("/checkout/finalize-account", body: payload)
+    }
+
+    // MARK: - Suivi Natif Viple Delivery Intégré (Sans ouvrir Safari)
+
+    public func trackVipleDelivery(
+        trackingNumber: String? = nil,
+        orderId: Int? = nil,
+        reference: String? = nil
+    ) async throws -> LivriaVipleDeliveryTrackResponse {
+        var items: [URLQueryItem] = []
+        if let trackingNumber, !trackingNumber.isEmpty {
+            items.append(URLQueryItem(name: "trackingNumber", value: trackingNumber))
+        }
+        if let orderId, orderId > 0 {
+            items.append(URLQueryItem(name: "orderId", value: String(orderId)))
+        }
+        if let reference, !reference.isEmpty {
+            items.append(URLQueryItem(name: "reference", value: reference))
+        }
+        return try await getJSON("/delivery/track", queryItems: items)
+    }
+
+    public func fetchUserShipments(userId: Int?, email: String?) async throws -> LivriaUserShipmentsResponse {
+        var items: [URLQueryItem] = []
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        return try await getJSON("/delivery/user-shipments", queryItems: items)
+    }
+
+    // MARK: - Préférences Mobile Synchronisées, Export RGPD & Diagnostics
+
+    public func fetchUserPreferences(userId: Int?, email: String?) async throws -> LivriaUserPreferencesResponse {
+        var items: [URLQueryItem] = []
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        return try await getJSON("/account/preferences", queryItems: items)
+    }
+
+    public func saveUserPreferences(
+        userId: Int?,
+        email: String?,
+        preferences: LivriaUserPreferences
+    ) async throws -> LivriaUserPreferencesResponse {
+        var payload: [String: Any] = [
+            "notifyOrders": preferences.notifyOrders,
+            "notifyMessages": preferences.notifyMessages,
+            "notifyPriceDrops": preferences.notifyPriceDrops,
+            "notifyStockAlerts": preferences.notifyStockAlerts,
+            "notifyBookClubs": preferences.notifyBookClubs,
+            "dataSaverMode": preferences.dataSaverMode,
+            "hapticFeedback": preferences.hapticFeedback,
+            "autoPlayAmbientAudio": preferences.autoPlayAmbientAudio,
+            "hideSpoilersDefault": preferences.hideSpoilersDefault,
+            "biometricLockEnabled": preferences.biometricLockEnabled,
+            "defaultShippingMode": preferences.defaultShippingMode,
+            "preferredConditionFilter": preferences.preferredConditionFilter,
+            "readingFontScale": preferences.readingFontScale,
+            "highContrastCards": preferences.highContrastCards
+        ]
+        if let userId, userId > 0 { payload["userId"] = userId }
+        if let email, !email.isEmpty { payload["email"] = email }
+        return try await postJSON("/account/preferences", body: payload)
+    }
+
+    public func exportPrivacyData(userId: Int?, email: String?) async throws -> String {
+        var items: [URLQueryItem] = []
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        var components = URLComponents(string: "\(baseAPI)/account/privacy-export")!
+        components.queryItems = items
+        guard let url = components.url else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        applyVipleDeviceHeaders(to: &req)
+        let (data, _) = try await performRequest(req)
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    public func pingDiagnostics() async throws -> LivriaDiagnosticsPingResponse {
+        try await getJSON("/diagnostics/ping")
     }
 }

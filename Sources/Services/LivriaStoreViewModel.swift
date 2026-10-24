@@ -78,6 +78,23 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var selectedUpsPointForCheckout: LivriaUpsPickupPoint? = nil
     @Published public var selectedCommunityRelayForCheckout: LivriaCommunityRelay? = nil
 
+    // Favoris ❤️, Récemment Consultés, Recherches Récentes & Notes de Lecture Personnelles (Persistance Locale Prod)
+    @Published public var favoriteBookIds: Set<Int> = []
+    @Published public var recentlyViewedBookIds: [Int] = []
+    @Published public var recentSearchQueries: [String] = []
+    @Published public var bookReadingNotes: [Int: String] = [:]
+    @Published public var readingMinutesByBook: [Int: Int] = [:]
+
+    // Suivi Natif Viple Delivery Intégré (Sans ouvrir Safari)
+    @Published public var activeTrackingResult: LivriaVipleDeliveryTrackResponse? = nil
+    @Published public var isTrackingLoading: Bool = false
+    @Published public var isShowingVipleDeliverySheet: Bool = false
+    @Published public var userShipments: [LivriaVipleDeliveryTrackResponse] = []
+
+    // Préférences Avancées, Confidentialité RGPD & Diagnostics
+    @Published public var userPreferences: LivriaUserPreferences = LivriaUserPreferences()
+    @Published public var lastDiagnosticsPing: LivriaDiagnosticsPingResponse? = nil
+
     private let defaults = UserDefaults.standard
     private let acceptedTermsKey = "livria.store.ios.acceptedCGU.v1"
     private let savedThemeKey = "livria.store.ios.selectedThemeId.v2"
@@ -85,6 +102,12 @@ public final class LivriaStoreViewModel: ObservableObject {
     private let savedUserIdKey = "livria.store.ios.vipleLiveUserId"
     private let savedGuestEmailKey = "livria.store.ios.guestEmail"
     private let savedUpsRelayDataKey = "livria.store.ios.selectedUpsRelay.v1"
+    private let savedFavoritesKey = "livria.store.ios.favoriteBookIds.v1"
+    private let savedRecentlyViewedKey = "livria.store.ios.recentlyViewedBookIds.v1"
+    private let savedRecentSearchesKey = "livria.store.ios.recentSearches.v1"
+    private let savedReadingNotesKey = "livria.store.ios.readingNotes.v1"
+    private let savedReadingMinutesKey = "livria.store.ios.readingMinutes.v1"
+    private let savedPreferencesKey = "livria.store.ios.userPreferences.v1"
 
     public init() {
         self.hasAcceptedTermsOfUse = defaults.bool(forKey: acceptedTermsKey)
@@ -95,6 +118,27 @@ public final class LivriaStoreViewModel: ObservableObject {
            let decoded = try? JSONDecoder().decode(LivriaUpsPickupPoint.self, from: data) {
             self.selectedUpsPointForCheckout = decoded
             self.selectedRelayForCheckout = "\(decoded.name) — \(decoded.address), \(decoded.postalCode) \(decoded.city)"
+        }
+        if let favArray = defaults.array(forKey: savedFavoritesKey) as? [Int] {
+            self.favoriteBookIds = Set(favArray)
+        }
+        if let recentIds = defaults.array(forKey: savedRecentlyViewedKey) as? [Int] {
+            self.recentlyViewedBookIds = recentIds
+        }
+        if let searches = defaults.stringArray(forKey: savedRecentSearchesKey) {
+            self.recentSearchQueries = searches
+        }
+        if let notesData = defaults.data(forKey: savedReadingNotesKey),
+           let decodedNotes = try? JSONDecoder().decode([Int: String].self, from: notesData) {
+            self.bookReadingNotes = decodedNotes
+        }
+        if let minsData = defaults.data(forKey: savedReadingMinutesKey),
+           let decodedMins = try? JSONDecoder().decode([Int: Int].self, from: minsData) {
+            self.readingMinutesByBook = decodedMins
+        }
+        if let prefsData = defaults.data(forKey: savedPreferencesKey),
+           let decodedPrefs = try? JSONDecoder().decode(LivriaUserPreferences.self, from: prefsData) {
+            self.userPreferences = decodedPrefs
         }
 
         let savedEmail = defaults.string(forKey: savedEmailKey)
@@ -1637,6 +1681,251 @@ public final class LivriaStoreViewModel: ObservableObject {
             Task {
                 await refreshBootstrap()
             }
+        }
+    }
+
+    // MARK: - 12. Favoris ❤️, Récemment Consultés, Recherches Récentes & Notes de Lecture Personnelles
+
+    public func triggerHaptic() {
+        guard userPreferences.hapticFeedback else { return }
+        #if canImport(UIKit)
+        let gen = UIImpactFeedbackGenerator(style: .light)
+        gen.impactOccurred()
+        #endif
+    }
+
+    public func isFavoriteBook(_ bookId: Int) -> Bool {
+        favoriteBookIds.contains(bookId)
+    }
+
+    public func toggleFavoriteBook(_ book: LivriaBook) {
+        triggerHaptic()
+        if favoriteBookIds.contains(book.id) {
+            favoriteBookIds.remove(book.id)
+            showToast("Retiré de vos coups de cœur (\(book.title))")
+        } else {
+            favoriteBookIds.insert(book.id)
+            showToast("❤️ Ajouté à vos coups de cœur (\(book.title))")
+        }
+        defaults.set(Array(favoriteBookIds), forKey: savedFavoritesKey)
+    }
+
+    public var favoriteBooks: [LivriaBook] {
+        books.filter { favoriteBookIds.contains($0.id) }
+    }
+
+    public func recordBookViewed(_ bookId: Int) {
+        guard bookId > 0 else { return }
+        var updated = recentlyViewedBookIds.filter { $0 != bookId }
+        updated.insert(bookId, at: 0)
+        if updated.count > 20 {
+            updated = Array(updated.prefix(20))
+        }
+        recentlyViewedBookIds = updated
+        defaults.set(updated, forKey: savedRecentlyViewedKey)
+    }
+
+    public func clearRecentlyViewedBooks() {
+        recentlyViewedBookIds = []
+        defaults.removeObject(forKey: savedRecentlyViewedKey)
+        showToast("Historique des livres récemment consultés effacé.")
+    }
+
+    public var recentlyViewedBooks: [LivriaBook] {
+        recentlyViewedBookIds.compactMap { id in
+            books.first(where: { $0.id == id })
+        }
+    }
+
+    public func addRecentSearch(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return }
+        var updated = recentSearchQueries.filter { $0.localizedCaseInsensitiveCompare(trimmed) != .orderedSame }
+        updated.insert(trimmed, at: 0)
+        if updated.count > 12 {
+            updated = Array(updated.prefix(12))
+        }
+        recentSearchQueries = updated
+        defaults.set(updated, forKey: savedRecentSearchesKey)
+    }
+
+    public func removeRecentSearch(_ query: String) {
+        recentSearchQueries.removeAll { $0 == query }
+        defaults.set(recentSearchQueries, forKey: savedRecentSearchesKey)
+    }
+
+    public func clearRecentSearches() {
+        recentSearchQueries = []
+        defaults.removeObject(forKey: savedRecentSearchesKey)
+    }
+
+    public func readingNote(for bookId: Int) -> String {
+        bookReadingNotes[bookId] ?? ""
+    }
+
+    public func saveReadingNote(bookId: Int, note: String) {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            bookReadingNotes.removeValue(forKey: bookId)
+        } else {
+            bookReadingNotes[bookId] = trimmed
+        }
+        if let encoded = try? JSONEncoder().encode(bookReadingNotes) {
+            defaults.set(encoded, forKey: savedReadingNotesKey)
+        }
+        triggerHaptic()
+        showToast("Note de lecture personnelle enregistrée.")
+    }
+
+    public func addReadingMinutes(bookId: Int, minutes: Int) {
+        guard minutes > 0 else { return }
+        let current = readingMinutesByBook[bookId] ?? 0
+        readingMinutesByBook[bookId] = current + minutes
+        if let encoded = try? JSONEncoder().encode(readingMinutesByBook) {
+            defaults.set(encoded, forKey: savedReadingMinutesKey)
+        }
+        triggerHaptic()
+        showToast("+\(minutes) min ajoutées à votre journal de lecture !")
+    }
+
+    public var totalReadingMinutes: Int {
+        readingMinutesByBook.values.reduce(0, +)
+    }
+
+    // MARK: - 13. Suivi Natif Viple Delivery Intégré (Sans ouvrir Safari)
+
+    public func trackOrderInApp(order: LivriaOrder) async {
+        isTrackingLoading = true
+        defer { isTrackingLoading = false }
+        do {
+            let res = try await LivriaAPIClient.shared.trackVipleDelivery(
+                trackingNumber: order.trackingNumber,
+                orderId: order.id,
+                reference: order.reference
+            )
+            self.activeTrackingResult = res
+            self.isShowingVipleDeliverySheet = true
+        } catch {
+            // Fallback local immédiat à partir de la commande pour garantir l'ouverture même si le réseau est lent
+            let fallbackSteps = [
+                LivriaVipleDeliveryStep(index: 0, label: "Validée", subtitle: "Commande enregistrée", isCompleted: true, isCurrent: order.status == "Pending"),
+                LivriaVipleDeliveryStep(index: 1, label: "Préparation", subtitle: "Bordereau Viple Delivery édité", isCompleted: order.status != "Pending", isCurrent: order.status == "Paid" || order.status == "Processing"),
+                LivriaVipleDeliveryStep(index: 2, label: "En transit", subtitle: "Pris en charge par \(order.carrier)", isCompleted: order.status == "Shipped" || order.status == "Delivered", isCurrent: order.status == "Shipped"),
+                LivriaVipleDeliveryStep(index: 3, label: "Livrée", subtitle: "Colis remis au destinataire", isCompleted: order.status == "Delivered", isCurrent: order.status == "Delivered")
+            ]
+            self.activeTrackingResult = LivriaVipleDeliveryTrackResponse(
+                ok: true,
+                found: true,
+                error: nil,
+                source: "LivriaStore",
+                orderId: order.id,
+                reference: order.reference,
+                trackingNumber: order.trackingNumber ?? order.reference,
+                vipleDeliveryBarcode: order.effectiveVipleBarcode,
+                carrier: order.carrier,
+                statusCode: order.status,
+                statusLabel: order.status == "Delivered" ? "Livrée" : (order.status == "Shipped" ? "Expédiée • En transit" : "En préparation Viple Delivery"),
+                currentStepIndex: order.currentStepIndex ?? (order.status == "Delivered" ? 3 : (order.status == "Shipped" ? 2 : 1)),
+                totalSteps: 4,
+                createdAt: order.createdAt,
+                estimatedDelivery: order.estimatedDelivery ?? "Sous 48h ouvrées",
+                shippingAddress: order.shippingAddress,
+                isRelayDelivery: order.isClickAndCollect,
+                relayBadge: order.isClickAndCollect ? "Point Relais / Viple Taker" : "Livraison à domicile",
+                totalAmount: order.total,
+                labelUrl: order.effectiveLabelUrl,
+                canCancel: order.status != "Delivered" && order.status != "Cancelled",
+                steps: fallbackSteps,
+                events: [
+                    LivriaVipleDeliveryEvent(
+                        timestamp: order.createdAt,
+                        statusLabel: "Suivi Viple Delivery actif",
+                        location: order.shippingAddress.isEmpty ? "Plateforme Logistique Livria" : order.shippingAddress,
+                        description: "Suivi en direct de votre commande \(order.reference).",
+                        isHighlight: true
+                    )
+                ],
+                items: order.items.map {
+                    LivriaVipleDeliveryItemSummary(
+                        title: $0.title,
+                        author: $0.author,
+                        coverUrl: $0.coverUrl,
+                        quantity: $0.quantity,
+                        format: $0.format,
+                        unitPrice: $0.unitPrice
+                    )
+                }
+            )
+            self.isShowingVipleDeliverySheet = true
+        }
+    }
+
+    public func trackParcelByCodeInApp(_ rawCode: String) async {
+        let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else {
+            showToast("Saisissez un numéro de commande (#LIV-...) ou de suivi (1Z... / VD-...).")
+            return
+        }
+        isTrackingLoading = true
+        defer { isTrackingLoading = false }
+        do {
+            let res = try await LivriaAPIClient.shared.trackVipleDelivery(
+                trackingNumber: code,
+                orderId: nil,
+                reference: code
+            )
+            if res.found {
+                self.activeTrackingResult = res
+                self.isShowingVipleDeliverySheet = true
+            } else {
+                showToast(res.error ?? "Aucun colis trouvé pour ce numéro.")
+            }
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
+    public func refreshUserShipments() async {
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey)
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        if let res = try? await LivriaAPIClient.shared.fetchUserShipments(userId: uid > 0 ? uid : nil, email: email) {
+            self.userShipments = res.shipments
+        }
+    }
+
+    // MARK: - 14. Préférences Synchronisées, Cache, RGPD & Diagnostics
+
+    public func saveAndSyncPreferences(_ updated: LivriaUserPreferences) async {
+        self.userPreferences = updated
+        if let encoded = try? JSONEncoder().encode(updated) {
+            defaults.set(encoded, forKey: savedPreferencesKey)
+        }
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey)
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        if let res = try? await LivriaAPIClient.shared.saveUserPreferences(
+            userId: uid > 0 ? uid : nil,
+            email: email,
+            preferences: updated
+        ) {
+            self.userPreferences = res.preferences
+        }
+        triggerHaptic()
+    }
+
+    public func clearLocalCache() {
+        URLCache.shared.removeAllCachedResponses()
+        clearRecentSearches()
+        clearRecentlyViewedBooks()
+        triggerHaptic()
+        showToast("Cache réseau et historique local nettoyés avec succès.")
+    }
+
+    public func runDiagnosticsCheck() async {
+        if let res = try? await LivriaAPIClient.shared.pingDiagnostics() {
+            self.lastDiagnosticsPing = res
+            showToast("Serveur Livria opérationnel (\(res.dbLatencyMs ?? 1) ms • API \(res.apiVersion))")
+        } else {
+            showToast("Diagnostic : impossible de joindre le serveur.")
         }
     }
 }

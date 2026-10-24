@@ -37,6 +37,24 @@ public struct HomeView: View {
 
                     smartRecommendationSection
 
+                    if !store.favoriteBooks.isEmpty {
+                        bookCarouselSection(
+                            title: "Mes Coups de Cœur ❤️",
+                            subtitle: "Votre liste d'envies et ouvrages favoris sauvegardés",
+                            icon: "heart.fill",
+                            books: store.favoriteBooks
+                        )
+                    }
+
+                    if !store.recentlyViewedBooks.isEmpty {
+                        bookCarouselSection(
+                            title: "Récemment consultés",
+                            subtitle: "Reprenez votre exploration là où vous l'aviez laissée",
+                            icon: "clock.arrow.circlepath",
+                            books: store.recentlyViewedBooks
+                        )
+                    }
+
                     if let spotlight = featuredBook {
                         spotlightBookCard(book: spotlight)
                     }
@@ -542,6 +560,7 @@ public struct HomeView: View {
     private func homeBookCard(book: LivriaBook) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
+                store.recordBookViewed(book.id)
                 selectedBook = book
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
@@ -554,23 +573,36 @@ public struct HomeView: View {
                             cornerRadius: 14
                         )
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            if book.hasNewStock {
-                                Text("✨ Neuf")
-                                    .font(.system(size: 9, weight: .heavy))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2.5)
-                                    .background(Capsule().fill(LivriaPalette.mint))
-                                    .foregroundStyle(.white)
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                if book.hasNewStock {
+                                    Text("✨ Neuf")
+                                        .font(.system(size: 9, weight: .heavy))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2.5)
+                                        .background(Capsule().fill(LivriaPalette.mint))
+                                        .foregroundStyle(.white)
+                                }
+                                if book.hasUsedStock {
+                                    Text("♻️ \(book.usedConditionLabel)")
+                                        .font(.system(size: 8.5, weight: .heavy))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2.5)
+                                        .background(Capsule().fill(LivriaPalette.usedAmber))
+                                        .foregroundStyle(.white)
+                                }
                             }
-                            if book.hasUsedStock {
-                                Text("♻️ \(book.usedConditionLabel)")
-                                    .font(.system(size: 8.5, weight: .heavy))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2.5)
-                                    .background(Capsule().fill(LivriaPalette.usedAmber))
-                                    .foregroundStyle(.white)
+                            Spacer()
+                            Button {
+                                store.toggleFavoriteBook(book)
+                            } label: {
+                                Image(systemName: store.isFavoriteBook(book.id) ? "heart.fill" : "heart")
+                                    .font(.system(size: 11.5, weight: .bold))
+                                    .foregroundStyle(store.isFavoriteBook(book.id) ? LivriaPalette.coral : .white)
+                                    .frame(width: 24, height: 24)
+                                    .background(Circle().fill(Color.black.opacity(0.42)))
                             }
+                            .buttonStyle(.plain)
                         }
                         .padding(6)
                     }

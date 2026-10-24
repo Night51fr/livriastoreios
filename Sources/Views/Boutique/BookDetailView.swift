@@ -15,6 +15,8 @@ public struct BookDetailView: View {
     @State private var averageRating: Double = 5.0
     @State private var newReviewRating: Int = 5
     @State private var newReviewComment: String = ""
+    @State private var personalNoteText: String = ""
+    @State private var selectedSimilarBook: LivriaBook? = nil
 
     public init(book: LivriaBook) {
         self.book = book
@@ -51,6 +53,10 @@ public struct BookDetailView: View {
                 actionButtonsCard
                 ambientAndMetadataCard
                 synopsisCard
+                personalReadingJournalCard
+                if !similarBooks.isEmpty {
+                    similarBooksCard
+                }
                 reviewsSectionCard
             }
             .padding(16)
@@ -58,7 +64,32 @@ public struct BookDetailView: View {
         .livriaThemedBackground(store.currentThemeId)
         .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    store.toggleFavoriteBook(currentBook)
+                } label: {
+                    Image(systemName: store.isFavoriteBook(book.id) ? "heart.fill" : "heart")
+                        .foregroundStyle(store.isFavoriteBook(book.id) ? LivriaPalette.coral : LivriaPalette.primary)
+                }
+                if let shareUrl = URL(string: "https://livria.store/boutique?book=\(book.id)") {
+                    ShareLink(
+                        item: shareUrl,
+                        subject: Text(book.title),
+                        message: Text("Découvre « \(book.title) » de \(book.author) sur Livria Store !")
+                    ) {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(LivriaPalette.primary)
+                    }
+                }
+            }
+        }
+        .navigationDestination(item: $selectedSimilarBook) { sim in
+            BookDetailView(book: sim)
+        }
         .task {
+            store.recordBookViewed(book.id)
+            personalNoteText = store.readingNote(for: book.id)
             await loadBookDetails()
         }
         .onDisappear {
@@ -103,9 +134,22 @@ public struct BookDetailView: View {
                     .foregroundStyle(LivriaPalette.inkMuted)
 
                 if !book.isbn.isEmpty {
-                    Text("ISBN : \(book.isbn)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(LivriaPalette.inkMuted)
+                    HStack(spacing: 6) {
+                        Text("ISBN : \(book.isbn)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = book.isbn
+                            #endif
+                            store.showToast("ISBN \(book.isbn) copié dans le presse-papiers.")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption2)
+                                .foregroundStyle(LivriaPalette.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
 
                 HStack(spacing: 4) {
@@ -397,6 +441,114 @@ public struct BookDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .livriaCard()
+    }
+
+    // MARK: - Carnet de Notes de Lecture Personnel & Journal de Session (0 donnée démo)
+
+    private var personalReadingJournalCard: some View {
+        let loggedMins = store.readingMinutesByBook[book.id] ?? 0
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Mon carnet de lecture privé", systemImage: "notebook")
+                    .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+                Spacer()
+                if loggedMins > 0 {
+                    Text("⏱️ \(loggedMins) min lues")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(LivriaPalette.primarySoft))
+                        .foregroundStyle(LivriaPalette.primaryDeep)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Text("Session de lecture :")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+                ForEach([15, 30, 45], id: \.self) { mins in
+                    Button {
+                        store.addReadingMinutes(bookId: book.id, minutes: mins)
+                    } label: {
+                        Text("+\(mins) min")
+                            .font(.system(size: 11.5, weight: .bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(LivriaPalette.background))
+                            .foregroundStyle(LivriaPalette.primary)
+                            .overlay(Capsule().stroke(LivriaPalette.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+
+            TextField("Notez vos citations favorites, votre page actuelle ou vos impressions personnelles...", text: $personalNoteText, axis: .vertical)
+                .lineLimit(2...5)
+                .font(.system(size: 13))
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
+
+            HStack {
+                Text("Conservé sur votre appareil en toute confidentialité")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+                Spacer()
+                Button {
+                    store.saveReadingNote(bookId: book.id, note: personalNoteText)
+                } label: {
+                    Label("Enregistrer ma note", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(LivriaPalette.primary))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .livriaCard()
+    }
+
+    // MARK: - Ouvrages Similaires Recommandés
+
+    private var similarBooksCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Dans le même univers littéraire")
+                .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(similarBooks) { sim in
+                        Button {
+                            selectedSimilarBook = sim
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                LivriaBookCoverView(
+                                    coverUrl: sim.coverUrl,
+                                    title: sim.title,
+                                    width: 96,
+                                    height: 140,
+                                    cornerRadius: 10
+                                )
+                                Text(sim.title)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(LivriaPalette.ink)
+                                    .lineLimit(1)
+                                    .frame(width: 96, alignment: .leading)
+                                Text(String(format: "%.2f €", sim.price))
+                                    .font(.system(size: 11.5, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(LivriaPalette.primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
         .livriaCard()
     }
 

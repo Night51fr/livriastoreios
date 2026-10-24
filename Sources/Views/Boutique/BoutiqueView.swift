@@ -15,12 +15,15 @@ public struct BoutiqueView: View {
 
     public enum ConditionFilter: String, CaseIterable {
         case all = "Tous états"
+        case favoritesOnly = "❤️ Favoris"
         case newOnly = "✨ Neuf"
         case usedOnly = "♻️ Occasion"
+        case digitalOnly = "🎧 Audio / E-Book"
     }
 
     public enum SortOption: String, CaseIterable {
         case popular = "Pertinence"
+        case newest = "Nouveautés"
         case priceAsc = "Prix croissant"
         case priceDesc = "Prix décroissant"
         case titleAz = "Titre A-Z"
@@ -31,6 +34,7 @@ public struct BoutiqueView: View {
     @State private var selectedGenre: String = "Tous"
     @State private var conditionFilter: ConditionFilter = .all
     @State private var sortOption: SortOption = .popular
+    @State private var maxPriceCeiling: Double = 0 // 0 = sans plafond
     @State private var selectedBook: LivriaBook? = nil
     @State private var showingISBNScanner: Bool = false
     @State private var showingLoobySocialWaitAlert: Bool = false
@@ -44,10 +48,21 @@ public struct BoutiqueView: View {
         switch conditionFilter {
         case .all:
             break
+        case .favoritesOnly:
+            list = list.filter { store.isFavoriteBook($0.id) }
         case .newOnly:
             list = list.filter { $0.hasNewStock }
         case .usedOnly:
             list = list.filter { $0.hasUsedStock }
+        case .digitalOnly:
+            list = list.filter { $0.hasAudio || $0.hasEpub }
+        }
+
+        if maxPriceCeiling > 0 {
+            list = list.filter {
+                let effectiveMin = $0.hasUsedStock ? min($0.price, $0.effectiveUsedPrice) : $0.price
+                return effectiveMin <= maxPriceCeiling
+            }
         }
 
         if selectedGenre != "Tous" {
@@ -70,6 +85,8 @@ public struct BoutiqueView: View {
         switch sortOption {
         case .popular:
             return list
+        case .newest:
+            return list.sorted { $0.id > $1.id }
         case .priceAsc:
             return list.sorted { $0.price < $1.price }
         case .priceDesc:
@@ -215,6 +232,14 @@ public struct BoutiqueView: View {
                                 Text(opt.rawValue).tag(opt)
                             }
                         }
+                        Divider()
+                        Menu("Budget maximum") {
+                            Button(maxPriceCeiling == 0 ? "✓ Sans plafond" : "Sans plafond") { maxPriceCeiling = 0 }
+                            Button(maxPriceCeiling == 10 ? "✓ ≤ 10,00 €" : "≤ 10,00 €") { maxPriceCeiling = 10 }
+                            Button(maxPriceCeiling == 15 ? "✓ ≤ 15,00 €" : "≤ 15,00 €") { maxPriceCeiling = 15 }
+                            Button(maxPriceCeiling == 20 ? "✓ ≤ 20,00 €" : "≤ 20,00 €") { maxPriceCeiling = 20 }
+                            Button(maxPriceCeiling == 30 ? "✓ ≤ 30,00 €" : "≤ 30,00 €") { maxPriceCeiling = 30 }
+                        }
                     } label: {
                         Image(systemName: "arrow.up.arrow.down.circle.fill")
                             .font(.system(size: 28))
@@ -223,31 +248,84 @@ public struct BoutiqueView: View {
                 }
             }
 
-            if searchScope == .books {
-                // Filtre d'état Neuf / Occasion
-                HStack(spacing: 8) {
-                    ForEach(ConditionFilter.allCases, id: \.self) { cond in
-                        let isSelected = conditionFilter == cond
+            if searchScope == .books && !store.recentSearchQueries.isEmpty && searchText.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.caption2)
+                            .foregroundStyle(LivriaPalette.inkMuted)
+                        ForEach(store.recentSearchQueries, id: \.self) { query in
+                            Button {
+                                searchText = query
+                            } label: {
+                                Text(query)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(LivriaPalette.background))
+                                    .foregroundStyle(LivriaPalette.inkMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         Button {
-                            conditionFilter = cond
+                            store.clearRecentSearches()
                         } label: {
-                            Text(cond.rawValue)
+                            Image(systemName: "trash")
+                                .font(.caption2)
+                                .foregroundStyle(.red.opacity(0.75))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if searchScope == .books {
+                // Filtre d'état Neuf / Occasion / Favoris ❤️ / Audio & E-Book
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(ConditionFilter.allCases, id: \.self) { cond in
+                            let isSelected = conditionFilter == cond
+                            Button {
+                                conditionFilter = cond
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(cond.rawValue)
+                                    if cond == .favoritesOnly && !store.favoriteBookIds.isEmpty {
+                                        Text("(\(store.favoriteBookIds.count))")
+                                    }
+                                }
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule().fill(
                                         isSelected
-                                            ? (cond == .usedOnly ? LivriaPalette.usedAmber : LivriaPalette.primary)
+                                            ? (cond == .usedOnly ? LivriaPalette.usedAmber : (cond == .favoritesOnly ? LivriaPalette.coral : LivriaPalette.primary))
                                             : LivriaPalette.background
                                     )
                                 )
                                 .foregroundStyle(isSelected ? .white : LivriaPalette.ink)
                                 .overlay(Capsule().stroke(LivriaPalette.border, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        if maxPriceCeiling > 0 {
+                            Button {
+                                maxPriceCeiling = 0
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(String(format: "≤ %.0f €", maxPriceCeiling))
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .font(.system(size: 11.5, weight: .bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(LivriaPalette.goldSoft))
+                                .foregroundStyle(Color(red: 0.55, green: 0.30, blue: 0.02))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    Spacer()
                 }
 
                 // Genres
@@ -284,11 +362,15 @@ public struct BoutiqueView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Carte Livre Boutique (Neuf & Occasion)
+    // MARK: - Carte Livre Boutique (Neuf & Occasion + Favoris ❤️)
 
     private func boutiqueBookCard(book: LivriaBook) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
+                if !searchText.isEmpty {
+                    store.addRecentSearch(searchText)
+                }
+                store.recordBookViewed(book.id)
                 selectedBook = book
             } label: {
                 VStack(alignment: .leading, spacing: 8) {
@@ -302,23 +384,36 @@ public struct BoutiqueView: View {
                         )
                         .frame(maxWidth: .infinity)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            if book.hasNewStock {
-                                Text("✨ Neuf")
-                                    .font(.system(size: 9.5, weight: .heavy))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(LivriaPalette.mint))
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                if book.hasNewStock {
+                                    Text("✨ Neuf")
+                                        .font(.system(size: 9.5, weight: .heavy))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Capsule().fill(LivriaPalette.mint))
+                                }
+                                if book.hasUsedStock {
+                                    Text("♻️ \(book.usedConditionLabel)")
+                                        .font(.system(size: 9.5, weight: .heavy))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Capsule().fill(LivriaPalette.usedAmber))
+                                }
                             }
-                            if book.hasUsedStock {
-                                Text("♻️ \(book.usedConditionLabel)")
-                                    .font(.system(size: 9.5, weight: .heavy))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(LivriaPalette.usedAmber))
+                            Spacer()
+                            Button {
+                                store.toggleFavoriteBook(book)
+                            } label: {
+                                Image(systemName: store.isFavoriteBook(book.id) ? "heart.fill" : "heart")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(store.isFavoriteBook(book.id) ? LivriaPalette.coral : .white)
+                                    .frame(width: 28, height: 28)
+                                    .background(Circle().fill(Color.black.opacity(0.42)))
                             }
+                            .buttonStyle(.plain)
                         }
                         .padding(6)
                     }

@@ -584,6 +584,7 @@ public struct LivriaOrder: Codable, Identifiable, Equatable, Sendable {
     public var status: String
     public var carrier: String
     public var trackingNumber: String?
+    public var vipleDeliveryBarcode: String?
     public var accessCode: String?
     public var hasShipping: Bool
     public var hasLabel: Bool
@@ -593,6 +594,11 @@ public struct LivriaOrder: Codable, Identifiable, Equatable, Sendable {
     public var isGiftWrapped: Bool
     public var isZeroWastePackaging: Bool
     public var isClickAndCollect: Bool
+    public var currentStepIndex: Int?
+    public var totalSteps: Int?
+    public var estimatedDelivery: String?
+    public var canTrackInApp: Bool?
+    public var canCancel: Bool?
     public var items: [LivriaOrderItem]
 
     public var effectiveLabelUrl: String {
@@ -600,6 +606,16 @@ public struct LivriaOrder: Codable, Identifiable, Equatable, Sendable {
             return labelUrl
         }
         return "https://livria.store/api/mobile/v1/orders/\(id)/label?auth=\(accessCode ?? "")"
+    }
+
+    public var effectiveVipleBarcode: String {
+        if let bc = vipleDeliveryBarcode, !bc.isEmpty {
+            return bc
+        }
+        if let trk = trackingNumber, !trk.isEmpty {
+            return trk
+        }
+        return "VD-LIV-\(id)"
     }
 }
 
@@ -939,4 +955,139 @@ public struct LivriaTakerStatusResponse: Codable, Sendable {
     public var application: LivriaVipleTakerApplication?
     public var validatedTakerRelays: [LivriaCommunityRelay]?
 }
+
+// MARK: - Suivi Natif Viple Delivery Intégré (Sans ouvrir Safari • /api/mobile/v1/delivery/track)
+
+public struct LivriaVipleDeliveryStep: Codable, Identifiable, Equatable, Sendable {
+    public var index: Int
+    public var label: String
+    public var subtitle: String
+    public var isCompleted: Bool
+    public var isCurrent: Bool
+
+    public var id: Int { index }
+}
+
+public struct LivriaVipleDeliveryEvent: Codable, Identifiable, Equatable, Sendable {
+    public var id: String { "\(timestamp)-\(statusLabel)" }
+    public var timestamp: String
+    public var statusLabel: String
+    public var location: String
+    public var description: String
+    public var isHighlight: Bool
+}
+
+public struct LivriaVipleDeliveryItemSummary: Codable, Identifiable, Equatable, Sendable {
+    public var id: String { "\(title)-\(format)" }
+    public var title: String
+    public var author: String
+    public var coverUrl: String
+    public var quantity: Int
+    public var format: String
+    public var unitPrice: Double
+}
+
+public struct LivriaVipleDeliveryTrackResponse: Codable, Identifiable, Equatable, Sendable {
+    public var id: String { "\(source)-\(orderId)-\(reference)" }
+    public var ok: Bool
+    public var found: Bool
+    public var error: String?
+    public var source: String
+    public var orderId: Int
+    public var reference: String
+    public var trackingNumber: String
+    public var vipleDeliveryBarcode: String
+    public var carrier: String
+    public var statusCode: String
+    public var statusLabel: String
+    public var currentStepIndex: Int
+    public var totalSteps: Int
+    public var createdAt: String
+    public var estimatedDelivery: String
+    public var shippingAddress: String
+    public var isRelayDelivery: Bool
+    public var relayBadge: String
+    public var totalAmount: Double
+    public var labelUrl: String
+    public var canCancel: Bool
+    public var steps: [LivriaVipleDeliveryStep]
+    public var events: [LivriaVipleDeliveryEvent]
+    public var items: [LivriaVipleDeliveryItemSummary]
+}
+
+public struct LivriaUserShipmentsResponse: Codable, Sendable {
+    public var ok: Bool
+    public var count: Int
+    public var shipments: [LivriaVipleDeliveryTrackResponse]
+}
+
+// MARK: - Préférences Mobile Synchronisées & Diagnostics Système
+
+public struct LivriaUserPreferences: Codable, Equatable, Sendable {
+    public var notifyOrders: Bool
+    public var notifyMessages: Bool
+    public var notifyPriceDrops: Bool
+    public var notifyStockAlerts: Bool
+    public var notifyBookClubs: Bool
+    public var dataSaverMode: Bool
+    public var hapticFeedback: Bool
+    public var autoPlayAmbientAudio: Bool
+    public var hideSpoilersDefault: Bool
+    public var biometricLockEnabled: Bool
+    public var defaultShippingMode: String
+    public var preferredConditionFilter: String
+    public var readingFontScale: Double
+    public var highContrastCards: Bool
+    public var updatedAtUtc: String?
+
+    public init(
+        notifyOrders: Bool = true,
+        notifyMessages: Bool = true,
+        notifyPriceDrops: Bool = true,
+        notifyStockAlerts: Bool = true,
+        notifyBookClubs: Bool = true,
+        dataSaverMode: Bool = false,
+        hapticFeedback: Bool = true,
+        autoPlayAmbientAudio: Bool = false,
+        hideSpoilersDefault: Bool = true,
+        biometricLockEnabled: Bool = false,
+        defaultShippingMode: String = "relay",
+        preferredConditionFilter: String = "all",
+        readingFontScale: Double = 1.0,
+        highContrastCards: Bool = false,
+        updatedAtUtc: String? = nil
+    ) {
+        self.notifyOrders = notifyOrders
+        self.notifyMessages = notifyMessages
+        self.notifyPriceDrops = notifyPriceDrops
+        self.notifyStockAlerts = notifyStockAlerts
+        self.notifyBookClubs = notifyBookClubs
+        self.dataSaverMode = dataSaverMode
+        self.hapticFeedback = hapticFeedback
+        self.autoPlayAmbientAudio = autoPlayAmbientAudio
+        self.hideSpoilersDefault = hideSpoilersDefault
+        self.biometricLockEnabled = biometricLockEnabled
+        self.defaultShippingMode = defaultShippingMode
+        self.preferredConditionFilter = preferredConditionFilter
+        self.readingFontScale = readingFontScale
+        self.highContrastCards = highContrastCards
+        self.updatedAtUtc = updatedAtUtc
+    }
+}
+
+public struct LivriaUserPreferencesResponse: Codable, Sendable {
+    public var ok: Bool
+    public var preferences: LivriaUserPreferences
+}
+
+public struct LivriaDiagnosticsPingResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var service: String
+    public var apiVersion: String
+    public var serverTimeUtc: String
+    public var dbLatencyMs: Int?
+    public var catalogCount: Int?
+    public var vipleDeliveryGatewayReachable: Bool?
+}
+
 

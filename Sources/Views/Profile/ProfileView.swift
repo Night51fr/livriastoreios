@@ -24,6 +24,8 @@ public struct ProfileView: View {
     @State private var selectedImageForCrop: UIImage? = nil
     @State private var isShowingAvatarCropper: Bool = false
     @State private var isUploadingAvatar: Bool = false
+    @State private var isShowingAdvancedSettingsSheet: Bool = false
+    @State private var quickTrackingCode: String = ""
 
     public init() {}
 
@@ -32,13 +34,17 @@ public struct ProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
                     quickAccessEcosystemCard
+                    vipleDeliveryDirectTrackingCard
+                    favoritesAndReadingStatsCard
 
                     if !store.isAuthenticated {
                         guestRestrictedProfileCard
+                        advancedSettingsEntryCard
                     } else {
                         profileIdentityHeaderCard
                         themePersonalizationStudioCard
                         editProfileAndAddressCard
+                        advancedSettingsEntryCard
                         legalTermsReviewCard
                         signOutCard
                         deleteAccountCard
@@ -51,6 +57,16 @@ public struct ProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 populateFieldsFromStore()
+            }
+            .sheet(isPresented: $isShowingAdvancedSettingsSheet) {
+                LivriaAdvancedSettingsSheet()
+                    .environmentObject(store)
+            }
+            .sheet(isPresented: $store.isShowingVipleDeliverySheet) {
+                if let tracking = store.activeTrackingResult {
+                    LivriaVipleDeliveryTrackingSheet(tracking: tracking)
+                        .environmentObject(store)
+                }
             }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 guard let newItem else { return }
@@ -578,6 +594,267 @@ public struct ProfileView: View {
                 postalCode: postalCode,
                 city: city
             )
+        }
+    }
+
+    // MARK: - Suivi Natif Viple Delivery Intégré depuis le Profil (Sans ouvrir Safari)
+
+    private var vipleDeliveryDirectTrackingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "truck.box.badge.clock.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+                Text("Suivi Viple Delivery (En direct)")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+                Spacer()
+                NavigationLink {
+                    OrdersView()
+                } label: {
+                    Text("Mes commandes (\(store.orders.count)) →")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("N° commande (#LIV-...) ou suivi (1Z..., VD-...)", text: $quickTrackingCode)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.background))
+                Button {
+                    Task {
+                        await store.trackParcelByCodeInApp(quickTrackingCode)
+                    }
+                } label: {
+                    Label("Suivre", systemImage: "location.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaPalette.primary))
+                        .foregroundStyle(.white)
+                }
+                .disabled(quickTrackingCode.trimmingCharacters(in: .whitespaces).isEmpty || store.isTrackingLoading)
+            }
+        }
+        .livriaCard(padding: 14)
+    }
+
+    // MARK: - Carte Coups de Cœur ❤️ & Journal de Lecture Personnel
+
+    private var favoritesAndReadingStatsCard: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(LivriaPalette.coral)
+                    Text("\(store.favoriteBookIds.count)")
+                        .font(.system(size: 17, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                }
+                Text("Coups de cœur")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.background))
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(LivriaPalette.primary)
+                    Text("\(store.recentlyViewedBookIds.count)")
+                        .font(.system(size: 17, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                }
+                Text("Consultés")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.background))
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "book.pages.fill")
+                        .foregroundStyle(LivriaPalette.gold)
+                    Text("\(store.totalReadingMinutes)m")
+                        .font(.system(size: 17, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                }
+                Text("Temps de lecture")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LivriaPalette.background))
+        }
+        .livriaCard(padding: 12)
+    }
+
+    private var advancedSettingsEntryCard: some View {
+        Button {
+            isShowingAdvancedSettingsSheet = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(LivriaPalette.primarySoft)
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Réglages avancés, Confidentialité RGPD & Cache")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                    Text("Notifications Viple Delivery, haptique, économiseur de données, export RGPD & diagnostic")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+            .livriaCard(padding: 14)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Centre de Réglages Avancés, Confidentialité RGPD, Cache & Diagnostics (LivriaAdvancedSettingsSheet)
+
+public struct LivriaAdvancedSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: LivriaStoreViewModel
+    @State private var prefs: LivriaUserPreferences = LivriaUserPreferences()
+    @State private var exportedPrivacyJson: String? = nil
+    @State private var isExportingPrivacy: Bool = false
+
+    public init() {}
+
+    public var body: some View {
+        NavigationStack {
+            List {
+                Section("Notifications & Alertes Viple Delivery") {
+                    Toggle("Suivi d'expédition Viple Delivery & UPS", isOn: $prefs.notifyOrders)
+                    Toggle("Alertes baisses de prix (Coups de cœur)", isOn: $prefs.notifyPriceDrops)
+                    Toggle("Alertes retour en stock (Occasion & Neuf)", isOn: $prefs.notifyStockAlerts)
+                    Toggle("Activité Clubs de lecture & Troc", isOn: $prefs.notifyBookClubs)
+                }
+
+                Section("Confort, Accessibilité & Économie de Données") {
+                    Toggle("Retour haptique (vibrations douces)", isOn: $prefs.hapticFeedback)
+                    Toggle("Mode économiseur de données", isOn: $prefs.dataSaverMode)
+                    Toggle("Masquer les spoilers par défaut", isOn: $prefs.hideSpoilersDefault)
+                    Toggle("Contraste renforcé des cartes", isOn: $prefs.highContrastCards)
+                    Toggle("Protection Face ID / Touch ID au lancement", isOn: $prefs.biometricLockEnabled)
+                }
+
+                Section("Historique Local & Cache Réseau") {
+                    Button {
+                        store.clearRecentlyViewedBooks()
+                    } label: {
+                        Label("Effacer les livres récemment consultés (\(store.recentlyViewedBookIds.count))", systemImage: "clock.badge.xmark")
+                    }
+
+                    Button {
+                        store.clearRecentSearches()
+                        store.showToast("Recherches récentes effacées.")
+                    } label: {
+                        Label("Effacer l'historique de recherche (\(store.recentSearchQueries.count))", systemImage: "magnifyingglass.circle")
+                    }
+
+                    Button(role: .destructive) {
+                        store.clearLocalCache()
+                    } label: {
+                        Label("Purger le cache réseau et les images temporaires", systemImage: "trash.slash.fill")
+                    }
+                }
+
+                Section("Confidentialité RGPD & Portabilité") {
+                    Button {
+                        Task {
+                            isExportingPrivacy = true
+                            let json = try? await LivriaAPIClient.shared.exportPrivacyData(
+                                userId: store.currentUser?.id,
+                                email: store.currentUser?.email
+                            )
+                            exportedPrivacyJson = json
+                            isExportingPrivacy = false
+                        }
+                    } label: {
+                        HStack {
+                            Label("Générer mon archive RGPD (JSON)", systemImage: "lock.doc.fill")
+                            Spacer()
+                            if isExportingPrivacy {
+                                ProgressView()
+                            }
+                        }
+                    }
+
+                    if let exported = exportedPrivacyJson {
+                        ShareLink(item: exported, preview: SharePreview("Export RGPD Viple Live ID")) {
+                            Label("Télécharger / Partager mon archive RGPD", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(LivriaPalette.primary)
+                        }
+                    }
+                }
+
+                Section("Diagnostic Serveur & Passerelle Viple Delivery") {
+                    Button {
+                        Task {
+                            await store.runDiagnosticsCheck()
+                        }
+                    } label: {
+                        Label("Tester la connexion au serveur Livria & Viple Delivery", systemImage: "waveform.path.ecg")
+                    }
+
+                    if let diag = store.lastDiagnosticsPing {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Service : \(diag.service) (API \(diag.apiVersion))")
+                                .font(.system(size: 12.5, weight: .bold))
+                            Text("Latence base de données : \(diag.dbLatencyMs ?? 1) ms")
+                                .font(.system(size: 12))
+                            Text("Passerelle Viple Delivery : \(diag.vipleDeliveryGatewayReachable == true ? "Opérationnelle ✓" : "Mode secours local")")
+                                .font(.system(size: 12))
+                                .foregroundStyle(diag.vipleDeliveryGatewayReachable == true ? .green : .orange)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("Réglages & RGPD")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Fermer") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Enregistrer") {
+                        Task {
+                            await store.saveAndSyncPreferences(prefs)
+                            store.showToast("Réglages enregistrés et synchronisés.")
+                            dismiss()
+                        }
+                    }
+                    .fontWeight(.bold)
+                }
+            }
+            .onAppear {
+                prefs = store.userPreferences
+            }
         }
     }
 }
