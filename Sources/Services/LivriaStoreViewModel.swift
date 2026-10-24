@@ -1390,6 +1390,28 @@ public final class LivriaStoreViewModel: ObservableObject {
         #endif
     }
 
+    public func openLivriaSocialApp() {
+        #if canImport(UIKit)
+        var components = URLComponents(string: "livriasocial://feed")!
+        if isAuthenticated, let user = currentUser, !user.isGuestAccount {
+            components.queryItems = [
+                URLQueryItem(name: "ssoUid", value: String(user.id)),
+                URLQueryItem(name: "ssoEmail", value: user.email),
+                URLQueryItem(name: "ssoName", value: user.displayName),
+                URLQueryItem(name: "ssoAvatar", value: user.avatarUrl),
+                URLQueryItem(name: "ssoSource", value: "Livria Store")
+            ]
+        }
+        if let appUrl = components.url {
+            UIApplication.shared.open(appUrl, options: [:]) { success in
+                if !success, let webFallback = URL(string: "https://livria.store/communaute") {
+                    UIApplication.shared.open(webFallback)
+                }
+            }
+        }
+        #endif
+    }
+
     // MARK: - 8. Jeux Littéraires XP
 
     public func claimDailyGameBonus() async {

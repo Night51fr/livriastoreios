@@ -66,17 +66,15 @@ public struct ProfileView: View {
             }
             .sheet(isPresented: $isShowingAvatarCropper) {
                 if let img = selectedImageForCrop {
-                    LivriaAvatarCropperSheet(image: img) { croppedData in
+                    LivriaAvatarCropperSheet(sourceImage: img) { croppedData in
                         isShowingAvatarCropper = false
                         isUploadingAvatar = true
                         Task {
-                            _ = await store.uploadCroppedAvatar(jpegData: croppedData)
+                            _ = await store.uploadCroppedAvatar(imageData: croppedData)
                             await MainActor.run {
                                 isUploadingAvatar = false
                             }
                         }
-                    } onCancel: {
-                        isShowingAvatarCropper = false
                     }
                 }
             }
@@ -175,8 +173,8 @@ public struct ProfileView: View {
                 .buttonStyle(.plain)
             }
 
-            Button {
-                store.isShowingTakerSheet = true
+            NavigationLink {
+                VipleTakerApplicationView()
             } label: {
                 HStack(spacing: 12) {
                     ZStack {
@@ -304,13 +302,8 @@ public struct ProfileView: View {
 
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                 HStack {
-                    if isUploadingAvatar {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "camera.crop.circle.fill")
-                    }
-                    Text(isUploadingAvatar ? "Envoi de la photo en cours..." : "Uploader & Recadrer ma photo de profil")
+                    Image(systemName: "camera.crop.circle.fill")
+                    Text("Uploader & Recadrer ma photo de profil")
                         .font(.system(size: 13.5, weight: .bold))
                     Spacer()
                     Image(systemName: "crop")
