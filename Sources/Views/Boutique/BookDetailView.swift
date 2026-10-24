@@ -296,6 +296,7 @@ public struct BookDetailView: View {
 
             HStack(spacing: 10) {
                 Button {
+                    guard store.requireAuthenticationForPurchase(reason: "acheter sur Livria Store") else { return }
                     Task {
                         await store.addToCart(bookId: book.id, format: activeCartFormat, quantity: 1)
                         store.isShowingCheckoutSheet = true

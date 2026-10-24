@@ -758,13 +758,13 @@ public struct VipleLiveAuthView: View {
             dismiss()
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "cart.badge.clock")
+                Image(systemName: "book.pages.fill")
                     .foregroundStyle(LivriaPalette.primary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Continuer sans compte (Checkout Invité)")
+                    Text("Explorer le catalogue sans se connecter")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(LivriaPalette.ink)
-                    Text("Achetez vos livres Neuf & Occasion et créez votre compte en 1 clic après paiement")
+                    Text("Parcourez la librairie Livria Store (connexion Viple Live ID requise pour acheter)")
                         .font(.system(size: 11.5))
                         .foregroundStyle(LivriaPalette.inkMuted)
                 }

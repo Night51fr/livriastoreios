@@ -238,7 +238,7 @@ public struct LivriaUserProfile: Codable, Identifiable, Equatable, Sendable {
 
     public var authBadgeLabel: String {
         if isGuestAccount {
-            return "Session Invité • Sans compte requis"
+            return "Session Visiteur • Connexion requise pour acheter"
         }
         return "Membre Viple Live ID (\(email))"
     }

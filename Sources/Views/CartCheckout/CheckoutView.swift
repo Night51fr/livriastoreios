@@ -226,6 +226,8 @@ public struct CheckoutView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if let done = completedOrder, done.ok {
                         orderSuccessCard(done: done)
+                    } else if store.isGuestSession {
+                        guestAuthRequiredCard
                     } else {
                         expressWalletsViaPayPalCard
                         deliveryModeSelector
@@ -332,6 +334,53 @@ public struct CheckoutView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Connexion Viple Live ID Requise pour Acheter
+
+    private var guestAuthRequiredCard: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(LivriaPalette.primarySoft)
+                    .frame(width: 72, height: 72)
+                Image(systemName: "person.badge.key.fill")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+
+            Text("Connexion requise pour commander")
+                .font(.system(size: 21, weight: .black, design: .rounded))
+                .foregroundStyle(LivriaPalette.ink)
+                .multilineTextAlignment(.center)
+
+            Text("Pour acheter vos livres Neuf & Occasion sur Livria Store et générer votre bordereau de livraison UPS, vous devez être connecté avec votre compte Viple Live ID.")
+                .font(.system(size: 13.5))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .multilineTextAlignment(.center)
+
+            Button {
+                dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    store.isShowingAuthSheet = true
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                    Text("Se connecter / Créer un compte Viple Live ID")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(LinearGradient(colors: [LivriaPalette.primary, LivriaPalette.coral], startPoint: .leading, endPoint: .trailing))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity)
+        .livriaCard()
     }
 
     // MARK: - Sélection du Mode de Paiement (PayPal / Apple Pay / Google Pay synchronisé avec /admin)
@@ -1129,6 +1178,11 @@ public struct CheckoutView: View {
 
     private func startCheckoutFlow(walletSource: String) {
         paymentErrorMessage = nil
+
+        guard store.requireAuthenticationForPurchase(reason: "valider votre commande sur Livria Store") else {
+            dismiss()
+            return
+        }
 
         if address.trimmingCharacters(in: .whitespaces).isEmpty ||
             postalCode.trimmingCharacters(in: .whitespaces).isEmpty ||

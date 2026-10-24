@@ -887,9 +887,22 @@ public final class LivriaStoreViewModel: ObservableObject {
         await performMemberSearch(query: query)
     }
 
-    // MARK: - 4. Panier (Neuf & Occasion), Abonnement Looby+ & Checkout (Apple Pay / Google Pay / PayPal + Post-Order 1-Clic)
+    // MARK: - 4. Panier (Neuf & Occasion), Abonnement Looby+ & Checkout (Compte Viple Live ID obligatoire pour acheter)
+
+    @discardableResult
+    public func requireAuthenticationForPurchase(reason: String = "acheter sur Livria Store") -> Bool {
+        guard !isGuestSession, isAuthenticated, let u = currentUser, !u.isGuestAccount else {
+            isShowingCartSheet = false
+            isShowingCheckoutSheet = false
+            isShowingAuthSheet = true
+            showToast("Connectez-vous avec votre compte Viple Live ID pour \(reason).")
+            return false
+        }
+        return true
+    }
 
     public func addToCart(bookId: Int, format: String = "Broché", quantity: Int = 1) async {
+        guard requireAuthenticationForPurchase(reason: "ajouter un article au panier et acheter") else { return }
         var payload = userAuthFields
         payload["bookId"] = bookId
         payload["format"] = format
@@ -918,6 +931,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func addLoobyPlusSubscriptionToCart(openCheckoutImmediately: Bool = false) async {
+        guard requireAuthenticationForPurchase(reason: "souscrire à Looby+") else { return }
         let payload = userAuthFields
         do {
             let res = try await LivriaAPIClient.shared.postRaw("/cart/add-loobyplus", body: payload)
@@ -935,6 +949,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func createPayPalExpressSession(walletSource: String, amount: Double) async -> LivriaPayPalCreateResponse? {
+        guard requireAuthenticationForPurchase(reason: "régler votre commande") else { return nil }
         do {
             return try await LivriaAPIClient.shared.createPayPalExpressOrder(amount: max(0.50, amount), walletSource: walletSource)
         } catch {
@@ -964,6 +979,7 @@ public final class LivriaStoreViewModel: ObservableObject {
         payPalOrderId: String? = nil,
         addSuspendedBook: Bool = false
     ) async -> LivriaCheckoutResponse? {
+        guard requireAuthenticationForPurchase(reason: "passer commande sur Livria Store") else { return nil }
         let resolvedEmail = !guestEmail.isEmpty ? guestEmail : email
         let resolvedWallet: String = {
             if paymentMethod.lowercased().contains("apple") { return "apple_pay" }

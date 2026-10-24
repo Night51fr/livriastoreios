@@ -213,20 +213,31 @@ public struct CartView: View {
     private var bottomCheckoutBar: some View {
         VStack(spacing: 6) {
             if store.isGuestSession {
-                Text("Checkout sans compte disponible • Création de compte en 1 clic après paiement")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(LivriaPalette.inkMuted)
+                HStack(spacing: 6) {
+                    Image(systemName: "person.badge.key.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                    Text("Connexion Viple Live ID requise pour finaliser votre achat")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                }
             }
             Button {
                 dismiss()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    store.isShowingCheckoutSheet = true
+                    if store.requireAuthenticationForPurchase(reason: "passer commande sur Livria Store") {
+                        store.isShowingCheckoutSheet = true
+                    }
                 }
             } label: {
                 HStack {
-                    Image(systemName: "lock.shield.fill")
-                    Text("Passer au Checkout (\(String(format: "%.2f €", store.cartTotal)))")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                    Image(systemName: store.isGuestSession ? "person.crop.circle.badge.checkmark" : "lock.shield.fill")
+                    Text(
+                        store.isGuestSession
+                            ? "Se connecter pour commander (\(String(format: "%.2f €", store.cartTotal)))"
+                            : "Passer au Checkout (\(String(format: "%.2f €", store.cartTotal)))"
+                    )
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
