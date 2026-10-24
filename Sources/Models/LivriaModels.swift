@@ -184,6 +184,7 @@ public struct LivriaBootstrapResponse: Codable, Sendable {
     public var home: LivriaHomeSection
     public var books: [LivriaBook]
     public var genres: [String]
+    public var shelf: [LivriaShelfEntry]?
     public var cart: [LivriaCartItem]
     public var orders: [LivriaOrder]
     public var trades: LivriaTradesBundle
@@ -1089,5 +1090,189 @@ public struct LivriaDiagnosticsPingResponse: Codable, Equatable, Sendable {
     public var catalogCount: Int?
     public var vipleDeliveryGatewayReachable: Bool?
 }
+
+// MARK: - Ma Bibliothèque Utilisateur & Lecteur Numérique / Audio (Uniquement pour les livres détenus en Numérique / Audio)
+
+public struct LivriaShelfEntry: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var id: Int
+    public var bookId: Int
+    public var title: String
+    public var author: String
+    public var genre: String
+    public var coverUrl: String
+    public var status: String
+    public var rating: Int
+    public var progress: Double
+    public var format: String
+    public var addedAt: String
+    public var finishedAt: String
+    public var ownsDigital: Bool
+    public var ownsAudio: Bool
+    public var ownsPhysical: Bool
+    public var ownedFormats: [String]
+    public var isPurchased: Bool
+    public var hasEpubInCatalog: Bool
+    public var hasAudioInCatalog: Bool
+    public var epubStreamUrl: String?
+    public var audioStreamUrl: String?
+    public var ambientSoundtrack: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, bookId, title, author, genre, coverUrl, status, rating, progress, format, addedAt, finishedAt
+        case ownsDigital, ownsAudio, ownsPhysical, ownedFormats, isPurchased
+        case hasEpubInCatalog, hasAudioInCatalog, epubStreamUrl, audioStreamUrl, ambientSoundtrack
+    }
+
+    public init(
+        id: Int,
+        bookId: Int,
+        title: String,
+        author: String,
+        genre: String = "Roman",
+        coverUrl: String = "",
+        status: String = "WantToRead",
+        rating: Int = 5,
+        progress: Double = 0,
+        format: String = "Broché",
+        addedAt: String = "",
+        finishedAt: String = "",
+        ownsDigital: Bool = false,
+        ownsAudio: Bool = false,
+        ownsPhysical: Bool = true,
+        ownedFormats: [String] = ["Broché"],
+        isPurchased: Bool = false,
+        hasEpubInCatalog: Bool = false,
+        hasAudioInCatalog: Bool = false,
+        epubStreamUrl: String? = nil,
+        audioStreamUrl: String? = nil,
+        ambientSoundtrack: String? = nil
+    ) {
+        self.id = id
+        self.bookId = bookId
+        self.title = title
+        self.author = author
+        self.genre = genre
+        self.coverUrl = coverUrl
+        self.status = status
+        self.rating = rating
+        self.progress = progress
+        self.format = format
+        self.addedAt = addedAt
+        self.finishedAt = finishedAt
+        self.ownsDigital = ownsDigital
+        self.ownsAudio = ownsAudio
+        self.ownsPhysical = ownsPhysical
+        self.ownedFormats = ownedFormats
+        self.isPurchased = isPurchased
+        self.hasEpubInCatalog = hasEpubInCatalog
+        self.hasAudioInCatalog = hasAudioInCatalog
+        self.epubStreamUrl = epubStreamUrl
+        self.audioStreamUrl = audioStreamUrl
+        self.ambientSoundtrack = ambientSoundtrack
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(Int.self, forKey: .id)) ?? 0
+        bookId = (try? c.decode(Int.self, forKey: .bookId)) ?? 0
+        title = (try? c.decode(String.self, forKey: .title)) ?? "Ouvrage Livria"
+        author = (try? c.decode(String.self, forKey: .author)) ?? ""
+        genre = (try? c.decode(String.self, forKey: .genre)) ?? "Roman"
+        coverUrl = (try? c.decode(String.self, forKey: .coverUrl)) ?? ""
+        status = (try? c.decode(String.self, forKey: .status)) ?? "WantToRead"
+        rating = (try? c.decode(Int.self, forKey: .rating)) ?? 5
+        progress = (try? c.decode(Double.self, forKey: .progress)) ?? 0
+        let rawFormat = (try? c.decode(String.self, forKey: .format)) ?? "Broché"
+        format = rawFormat
+        addedAt = (try? c.decode(String.self, forKey: .addedAt)) ?? ""
+        finishedAt = (try? c.decode(String.self, forKey: .finishedAt)) ?? ""
+
+        let lowerFormat = rawFormat.lowercased()
+        let inferredDigital = lowerFormat.contains("numérique") || lowerFormat.contains("numerique") || lowerFormat.contains("epub") || lowerFormat.contains("e-book")
+        let inferredAudio = lowerFormat.contains("audio")
+
+        ownsDigital = (try? c.decode(Bool.self, forKey: .ownsDigital)) ?? inferredDigital
+        ownsAudio = (try? c.decode(Bool.self, forKey: .ownsAudio)) ?? inferredAudio
+        ownsPhysical = (try? c.decode(Bool.self, forKey: .ownsPhysical)) ?? (!inferredDigital && !inferredAudio)
+        if let decodedFormats = try? c.decode([String].self, forKey: .ownedFormats), !decodedFormats.isEmpty {
+            ownedFormats = decodedFormats
+        } else {
+            var list: [String] = []
+            if ownsDigital { list.append("Numérique") }
+            if ownsAudio { list.append("Audio") }
+            if ownsPhysical || list.isEmpty { list.append("Broché") }
+            ownedFormats = list
+        }
+        isPurchased = (try? c.decode(Bool.self, forKey: .isPurchased)) ?? false
+        hasEpubInCatalog = (try? c.decode(Bool.self, forKey: .hasEpubInCatalog)) ?? ownsDigital
+        hasAudioInCatalog = (try? c.decode(Bool.self, forKey: .hasAudioInCatalog)) ?? ownsAudio
+        epubStreamUrl = try? c.decodeIfPresent(String.self, forKey: .epubStreamUrl)
+        audioStreamUrl = try? c.decodeIfPresent(String.self, forKey: .audioStreamUrl)
+        ambientSoundtrack = try? c.decodeIfPresent(String.self, forKey: .ambientSoundtrack)
+    }
+
+    public var resolvedCoverURL: URL? {
+        LivriaURLResolver.resolve(coverUrl)
+    }
+
+    public var statusLabelFr: String {
+        switch status {
+        case "Reading": return "En cours"
+        case "Read": return "Terminé"
+        default: return "À lire"
+        }
+    }
+
+    public var isCoupDeCoeur: Bool {
+        rating >= 5
+    }
+
+    /// Autorise le lecteur numérique uniquement si le livre est détenu au format Numérique
+    public var canOpenDigitalReader: Bool {
+        ownsDigital
+    }
+
+    /// Autorise le lecteur audio uniquement si le livre est détenu au format Audio
+    public var canOpenAudioPlayer: Bool {
+        ownsAudio
+    }
+}
+
+public struct LivriaBookChapter: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var number: Int
+    public var title: String
+    public var durationSeconds: Int
+    public var content: String
+
+    public var id: Int { number }
+
+    public init(number: Int, title: String, durationSeconds: Int, content: String) {
+        self.number = number
+        self.title = title
+        self.durationSeconds = durationSeconds
+        self.content = content
+    }
+}
+
+public struct LivriaLibraryBookContentResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var error: String?
+    public var bookId: Int?
+    public var title: String?
+    public var author: String?
+    public var genre: String?
+    public var isbn: String?
+    public var coverUrl: String?
+    public var ownsDigital: Bool?
+    public var ownsAudio: Bool?
+    public var ownedFormats: [String]?
+    public var progress: Double?
+    public var ambientSoundtrack: String?
+    public var aiSummary: String?
+    public var audioStreamUrl: String?
+    public var epubStreamUrl: String?
+    public var chapters: [LivriaBookChapter]?
+}
+
 
 

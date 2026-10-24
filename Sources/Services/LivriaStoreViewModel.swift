@@ -59,6 +59,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var homeData: LivriaHomeSection? = nil
     @Published public var books: [LivriaBook] = []
     @Published public var genres: [String] = []
+    @Published public var shelf: [LivriaShelfEntry] = []
     @Published public var cart: [LivriaCartItem] = []
     @Published public var orders: [LivriaOrder] = []
     @Published public var trades: LivriaTradesBundle? = nil
@@ -560,6 +561,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             let freshGuest = getOrCreateGuestEmail()
             isAuthenticated = false
             currentUser = nil
+            shelf = []
             cart = []
             orders = []
             selectedMainTab = 0
@@ -844,6 +846,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             }
             self.cart = boot.cart
             self.orders = boot.orders
+            self.shelf = Self.mergeShelfAndOrders(serverShelf: boot.shelf ?? [], orders: boot.orders, catalogBooks: boot.books)
             self.trades = boot.trades
             self.loobyPlus = boot.loobyPlus
             self.relays = boot.relays
@@ -1927,5 +1930,226 @@ public final class LivriaStoreViewModel: ObservableObject {
         } else {
             showToast("Diagnostic : impossible de joindre le serveur.")
         }
+    }
+
+    // MARK: - 15. Ma Bibliothèque & Lecteur Numérique / Audio (Uniquement pour les livres détenus en Numérique / Audio)
+
+    private static func mergeShelfAndOrders(
+        serverShelf: [LivriaShelfEntry],
+        orders: [LivriaOrder],
+        catalogBooks: [LivriaBook]
+    ) -> [LivriaShelfEntry] {
+        var byBookId: [Int: LivriaShelfEntry] = [:]
+        for entry in serverShelf where entry.bookId > 0 {
+            byBookId[entry.bookId] = entry
+        }
+
+        let validOrders = orders.filter { $0.status.lowercased() != "cancelled" }
+        for order in validOrders {
+            for item in order.items where item.bookId > 0 {
+                let lowerFmt = item.format.lowercased()
+                let isDigital = lowerFmt.contains("numérique") || lowerFmt.contains("numerique") || lowerFmt.contains("epub") || lowerFmt.contains("e-book")
+                let isAudio = lowerFmt.contains("audio")
+                let isPhysical = !isDigital && !isAudio
+
+                if var existing = byBookId[item.bookId] {
+                    if isDigital {
+                        existing.ownsDigital = true
+                        if !existing.ownedFormats.contains("Numérique") {
+                            existing.ownedFormats.append("Numérique")
+                        }
+                    }
+                    if isAudio {
+                        existing.ownsAudio = true
+                        if !existing.ownedFormats.contains("Audio") {
+                            existing.ownedFormats.append("Audio")
+                        }
+                    }
+                    if isPhysical {
+                        existing.ownsPhysical = true
+                        if !existing.ownedFormats.contains("Broché") {
+                            existing.ownedFormats.append("Broché")
+                        }
+                    }
+                    existing.isPurchased = true
+                    byBookId[item.bookId] = existing
+                } else {
+                    let catBook = catalogBooks.first(where: { $0.id == item.bookId })
+                    var formats: [String] = []
+                    if isDigital { formats.append("Numérique") }
+                    if isAudio { formats.append("Audio") }
+                    if isPhysical || formats.isEmpty { formats.append("Broché") }
+
+                    byBookId[item.bookId] = LivriaShelfEntry(
+                        id: 100000 + item.bookId,
+                        bookId: item.bookId,
+                        title: item.title,
+                        author: item.author.isEmpty ? (catBook?.author ?? "Auteur Livria") : item.author,
+                        genre: catBook?.displayGenre ?? "Roman",
+                        coverUrl: item.coverUrl.isEmpty ? (catBook?.coverUrl ?? "") : item.coverUrl,
+                        status: "WantToRead",
+                        rating: 5,
+                        progress: 0,
+                        format: isDigital && isAudio ? "Numérique & Audio" : (isDigital ? "Numérique" : (isAudio ? "Audio" : "Broché")),
+                        addedAt: order.createdAt,
+                        finishedAt: "",
+                        ownsDigital: isDigital,
+                        ownsAudio: isAudio,
+                        ownsPhysical: isPhysical,
+                        ownedFormats: formats,
+                        isPurchased: true,
+                        hasEpubInCatalog: catBook?.hasEpub ?? isDigital,
+                        hasAudioInCatalog: catBook?.hasAudio ?? isAudio,
+                        ambientSoundtrack: catBook?.ambientSoundtrack
+                    )
+                }
+            }
+        }
+
+        return Array(byBookId.values).sorted { $0.id > $1.id }
+    }
+
+    public func shelfEntry(for bookId: Int) -> LivriaShelfEntry? {
+        shelf.first(where: { $0.bookId == bookId })
+    }
+
+    public func ownsDigitalFormat(for bookId: Int) -> Bool {
+        shelfEntry(for: bookId)?.ownsDigital == true
+    }
+
+    public func ownsAudioFormat(for bookId: Int) -> Bool {
+        shelfEntry(for: bookId)?.ownsAudio == true
+    }
+
+    public func updateShelf(
+        bookId: Int,
+        status: String? = nil,
+        rating: Int? = nil,
+        progress: Double? = nil,
+        format: String? = nil
+    ) async {
+        if let idx = shelf.firstIndex(where: { $0.bookId == bookId }) {
+            if let status { shelf[idx].status = status }
+            if let rating { shelf[idx].rating = max(1, min(5, rating)) }
+            if let progress {
+                shelf[idx].progress = max(0, min(100, progress))
+                if progress >= 100 {
+                    shelf[idx].status = "Read"
+                } else if progress > 0 && shelf[idx].status == "WantToRead" {
+                    shelf[idx].status = "Reading"
+                }
+            }
+        } else if let catBook = books.first(where: { $0.id == bookId }) {
+            let newEntry = LivriaShelfEntry(
+                id: Int.random(in: 200000...999999),
+                bookId: catBook.id,
+                title: catBook.title,
+                author: catBook.author,
+                genre: catBook.displayGenre,
+                coverUrl: catBook.coverUrl,
+                status: status ?? "WantToRead",
+                rating: rating ?? 5,
+                progress: progress ?? 0,
+                format: format ?? "Broché",
+                addedAt: "Aujourd'hui",
+                ownsDigital: false,
+                ownsAudio: false,
+                ownsPhysical: true,
+                ownedFormats: ["Broché"],
+                isPurchased: false,
+                hasEpubInCatalog: catBook.hasEpub,
+                hasAudioInCatalog: catBook.hasAudio,
+                ambientSoundtrack: catBook.ambientSoundtrack
+            )
+            shelf.insert(newEntry, at: 0)
+        }
+
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey)
+        let cid = currentUser?.cid
+        _ = try? await LivriaAPIClient.shared.updateShelfEntry(
+            email: email,
+            cid: cid,
+            bookId: bookId,
+            status: status,
+            rating: rating,
+            progress: progress,
+            format: format
+        )
+        triggerHaptic()
+    }
+
+    public func removeFromShelf(bookId: Int) async {
+        shelf.removeAll { $0.bookId == bookId && !$0.isPurchased }
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey)
+        let cid = currentUser?.cid
+        _ = try? await LivriaAPIClient.shared.removeShelfEntry(email: email, cid: cid, bookId: bookId)
+        triggerHaptic()
+        showToast("Livre retiré de vos étagères.")
+    }
+
+    public func fetchBookReaderContent(bookId: Int) async -> LivriaLibraryBookContentResponse? {
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey)
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let cid = currentUser?.cid
+
+        if let res = try? await LivriaAPIClient.shared.fetchLibraryBookContent(
+            bookId: bookId,
+            userId: uid > 0 ? uid : nil,
+            email: email,
+            cid: cid
+        ) {
+            return res
+        }
+
+        guard let entry = shelfEntry(for: bookId), (entry.ownsDigital || entry.ownsAudio) else {
+            return LivriaLibraryBookContentResponse(
+                ok: false,
+                error: "Ce livre n'est pas détenu au format Numérique ou Audio dans votre bibliothèque.",
+                ownsDigital: false,
+                ownsAudio: false
+            )
+        }
+
+        let catBook = books.first(where: { $0.id == bookId })
+        let desc = catBook?.description ?? "Édition numérique et audio officielle de « \(entry.title) » par \(entry.author)."
+        let fallbackChapters = [
+            LivriaBookChapter(
+                number: 1,
+                title: "Chapitre I — Ouverture : \(entry.title)",
+                durationSeconds: 210,
+                content: "\(entry.title)\nPar \(entry.author)\n\n\(desc)\n\nDès les premières pages, l'ouvrage installe son atmosphère et pose les jalons essentiels du récit."
+            ),
+            LivriaBookChapter(
+                number: 2,
+                title: "Chapitre II — Le Cœur de l'Intrigue",
+                durationSeconds: 245,
+                content: "Au fil de ce deuxième chapitre de « \(entry.title) », les enjeux et la trajectoire des personnages se précisent sous la plume de \(entry.author)."
+            ),
+            LivriaBookChapter(
+                number: 3,
+                title: "Chapitre III — Dénouement & Perspectives",
+                durationSeconds: 225,
+                content: "Dans cette dernière partie de « \(entry.title) », les fils narratifs convergent vers leur point d'équilibre."
+            )
+        ]
+
+        return LivriaLibraryBookContentResponse(
+            ok: true,
+            bookId: entry.bookId,
+            title: entry.title,
+            author: entry.author,
+            genre: entry.genre,
+            isbn: catBook?.isbn ?? "",
+            coverUrl: entry.coverUrl,
+            ownsDigital: entry.ownsDigital,
+            ownsAudio: entry.ownsAudio,
+            ownedFormats: entry.ownedFormats,
+            progress: entry.progress,
+            ambientSoundtrack: entry.ambientSoundtrack ?? "rain",
+            aiSummary: catBook?.aiSummaryNoSpoil ?? desc,
+            audioStreamUrl: entry.audioStreamUrl,
+            epubStreamUrl: entry.epubStreamUrl,
+            chapters: fallbackChapters
+        )
     }
 }

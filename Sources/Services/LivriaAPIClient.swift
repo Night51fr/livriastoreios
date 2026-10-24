@@ -508,4 +508,55 @@ public final class LivriaAPIClient {
     public func pingDiagnostics() async throws -> LivriaDiagnosticsPingResponse {
         try await getJSON("/diagnostics/ping")
     }
+
+    // MARK: - Ma Bibliothèque, Progression de Lecture & Contenu Liseuse / Audio
+
+    public func updateShelfEntry(
+        email: String?,
+        cid: String?,
+        bookId: Int,
+        status: String?,
+        rating: Int?,
+        progress: Double?,
+        format: String?
+    ) async throws -> LivriaSimpleResponse {
+        var payload: [String: Any] = ["bookId": bookId]
+        if let email, !email.isEmpty { payload["email"] = email }
+        if let cid, !cid.isEmpty { payload["cid"] = cid }
+        if let status, !status.isEmpty { payload["status"] = status }
+        if let rating { payload["rating"] = rating }
+        if let progress { payload["progress"] = progress }
+        if let format, !format.isEmpty { payload["format"] = format }
+        return try await postJSON("/shelf/update", body: payload)
+    }
+
+    public func removeShelfEntry(
+        email: String?,
+        cid: String?,
+        bookId: Int
+    ) async throws -> LivriaSimpleResponse {
+        var payload: [String: Any] = ["bookId": bookId]
+        if let email, !email.isEmpty { payload["email"] = email }
+        if let cid, !cid.isEmpty { payload["cid"] = cid }
+        return try await postJSON("/shelf/remove", body: payload)
+    }
+
+    public func fetchLibraryBookContent(
+        bookId: Int,
+        userId: Int?,
+        email: String?,
+        cid: String?
+    ) async throws -> LivriaLibraryBookContentResponse {
+        var items: [URLQueryItem] = []
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        if let cid, !cid.isEmpty {
+            items.append(URLQueryItem(name: "cid", value: cid))
+        }
+        return try await getJSON("/library/book/\(bookId)/content", queryItems: items)
+    }
 }

@@ -17,6 +17,8 @@ public struct BookDetailView: View {
     @State private var newReviewComment: String = ""
     @State private var personalNoteText: String = ""
     @State private var selectedSimilarBook: LivriaBook? = nil
+    @State private var activeDigitalReaderEntry: LivriaShelfEntry? = nil
+    @State private var activeAudioPlayerEntry: LivriaShelfEntry? = nil
 
     public init(book: LivriaBook) {
         self.book = book
@@ -86,6 +88,14 @@ public struct BookDetailView: View {
         }
         .navigationDestination(item: $selectedSimilarBook) { sim in
             BookDetailView(book: sim)
+        }
+        .sheet(item: $activeDigitalReaderEntry) { entry in
+            LivriaDigitalReaderSheet(entry: entry)
+                .environmentObject(store)
+        }
+        .sheet(item: $activeAudioPlayerEntry) { entry in
+            LivriaAudioPlayerSheet(entry: entry)
+                .environmentObject(store)
         }
         .task {
             store.recordBookViewed(book.id)
@@ -368,6 +378,53 @@ public struct BookDetailView: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.goldSoft))
                         .foregroundStyle(Color(red: 0.55, green: 0.32, blue: 0.02))
                 }
+            }
+
+            if let entry = store.shelfEntry(for: book.id), (entry.canOpenDigitalReader || entry.canOpenAudioPlayer) {
+                HStack(spacing: 10) {
+                    if entry.canOpenDigitalReader {
+                        Button {
+                            activeDigitalReaderEntry = entry
+                        } label: {
+                            Label("Lire mon édition Numérique", systemImage: "book.pages.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.primary))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if entry.canOpenAudioPlayer {
+                        Button {
+                            activeAudioPlayerEntry = entry
+                        } label: {
+                            Label("Écouter mon Livre Audio", systemImage: "headphones")
+                                .font(.system(size: 13, weight: .bold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.coral))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else if store.isAuthenticated && store.shelfEntry(for: book.id) == nil {
+                Button {
+                    Task {
+                        await store.updateShelf(bookId: book.id, status: "WantToRead", format: "Broché")
+                        store.showToast("« \(book.title) » ajouté à Ma bibliothèque (À lire).")
+                    }
+                } label: {
+                    Label("Ajouter à Ma bibliothèque (À lire)", systemImage: "books.vertical.fill")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaPalette.background))
+                        .foregroundStyle(LivriaPalette.primary)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaPalette.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
             }
         }
         .livriaCard()
