@@ -51,6 +51,9 @@ public struct BookDetailView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
                 headerBookCard
+                if currentBook.hasLongerDelivery12Days {
+                    longerDeliveryNoticeCard
+                }
                 formatAndConditionSelectorCard
                 actionButtonsCard
                 ambientAndMetadataCard
@@ -188,11 +191,53 @@ public struct BookDetailView: View {
                             .font(.system(size: 11.5, weight: .bold))
                             .foregroundStyle(selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.mint)
                     }
+
+                    if currentBook.hasLongerDelivery12Days {
+                        HStack(spacing: 5) {
+                            Image(systemName: "clock.badge.exclamationmark.fill")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(currentBook.longerDeliveryLabel ?? "Réception plus longue : sous 12j")
+                                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.orange.opacity(0.16)))
+                        .foregroundStyle(Color(red: 0.76, green: 0.25, blue: 0.05))
+                        .padding(.top, 3)
+                    }
                 }
             }
             Spacer()
         }
         .livriaCard()
+    }
+
+    // MARK: - Bandeau « Réception plus longue : sous 12j » (En commande fournisseur, hors stock immédiat)
+
+    private var longerDeliveryNoticeCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.18))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "shippingbox.and.arrow.backward.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(red: 0.76, green: 0.25, blue: 0.05))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(currentBook.longerDeliveryLabel ?? "Réception plus longue : sous 12j")
+                    .font(.system(size: 14.5, weight: .black, design: .rounded))
+                    .foregroundStyle(Color(red: 0.60, green: 0.20, blue: 0.04))
+                Text(currentBook.longerDeliveryNotice ?? "Cet ouvrage n'est pas encore dans notre stock immédiat mais est actuellement en commande. Votre exemplaire vous sera expédié dès réception (sous 12 jours).")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.70, green: 0.26, blue: 0.06))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(red: 1.0, green: 0.97, blue: 0.93)))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.orange.opacity(0.45), lineWidth: 1.5))
     }
 
     // MARK: - Sélecteur de Format & d'État (Neuf vs Occasion au prix indiqué de chacun)

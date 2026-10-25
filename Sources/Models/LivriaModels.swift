@@ -311,6 +311,15 @@ public struct LivriaBook: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var hasNewInStock: Bool?
     public var hasUsedInStock: Bool?
 
+    // Option Admin : Réception plus longue : sous 12j (en commande fournisseur, hors stock immédiat — désactivé par défaut)
+    public var isLongerDelivery12Days: Bool?
+    public var longerDeliveryLabel: String?
+    public var longerDeliveryNotice: String?
+
+    public var hasLongerDelivery12Days: Bool {
+        isLongerDelivery12Days == true
+    }
+
     // Métadonnées enrichies Boutique
     public var countryOfOrigin: String?
     public var moodTags: String?
