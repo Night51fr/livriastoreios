@@ -40,6 +40,7 @@ public enum LivriaPalette: Sendable {
     public static let background = Color(red: 0.984, green: 0.969, blue: 1.000)       // #FBF7FF
     public static let backgroundAlt = Color(red: 0.953, green: 0.925, blue: 1.000)    // #F3ECFF
     public static let cardPaper = Color(red: 1.000, green: 0.992, blue: 0.976)        // #FFFDF9
+    public static let surface = cardPaper
     public static let primary = Color(red: 0.486, green: 0.302, blue: 1.000)          // #7C4DFF
     public static let primaryDeep = Color(red: 0.369, green: 0.208, blue: 0.694)      // #5E35B1
     public static let primarySoft = Color(red: 0.929, green: 0.898, blue: 1.000)      // #EDE5FF
