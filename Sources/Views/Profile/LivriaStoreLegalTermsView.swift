@@ -260,8 +260,8 @@ public struct LivriaStoreLegalTermsView: View {
         LegalArticle(
             id: 7,
             icon: "crown.fill",
-            title: "7. Abonnement Auto-Renouvelable Club Looby+ (3,50 € / mois)",
-            body: "Titre de l'abonnement : Abonnement Looby+ Mensuel (identifiant App Store : store.livria.loobyplus.monthly). Durée : 1 mois (renouvellement automatique mensuel). Prix : 3,50 € / mois TTC sans engagement. L'abonnement peut être souscrit et utilisé avec ou sans création de compte préalable. Le paiement est débité du compte Identifiant Apple à la confirmation de l'achat et se renouvelle automatiquement sauf résiliation au moins 24 heures avant la fin de la période en cours depuis les Réglages du compte App Store. Le contrat de licence standard d'Apple (https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) ainsi que nos CGU/CGV (https://livria.store/eula) s'appliquent."
+            title: "7. Abonnement Auto-Renouvelable Club Looby+ (3,49 € / mois)",
+            body: "Titre de l'abonnement : Abonnement Looby+ Mensuel (identifiant App Store : store.livria.loobyplus.monthly). Durée : 1 mois (renouvellement automatique mensuel). Prix : 3,49 € / mois TTC sans engagement. L'abonnement peut être souscrit et utilisé avec ou sans création de compte préalable. Le paiement est débité du compte Identifiant Apple à la confirmation de l'achat et se renouvelle automatiquement sauf résiliation au moins 24 heures avant la fin de la période en cours depuis les Réglages du compte App Store. Le contrat de licence standard d'Apple (https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) ainsi que nos CGU/CGV (https://livria.store/eula) s'appliquent."
         ),
         LegalArticle(
             id: 8,

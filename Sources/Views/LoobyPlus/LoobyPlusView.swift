@@ -4,7 +4,7 @@ import StoreKit
 import UIKit
 #endif
 
-// MARK: - Looby+ : Dashboard Abonné & Page de Souscription (3,50 €/mois)
+// MARK: - Looby+ : Dashboard Abonné & Page de Souscription (3,49 €/mois)
 
 public struct LoobyPlusView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
@@ -24,7 +24,7 @@ public struct LoobyPlusView: View {
     }
 
     private var formattedSubscriptionPrice: String {
-        store.loobyPlusStoreKitProduct?.displayPrice ?? "3,50 €"
+        store.loobyPlusStoreKitProduct?.displayPrice ?? "3,49 €"
     }
 
     /// Uniquement les livres qui disposent effectivement d'un format Audio
@@ -259,11 +259,11 @@ public struct LoobyPlusView: View {
         .livriaCard()
     }
 
-    // MARK: - 1. Page de Présentation & Souscription Looby+ In-App (3,50 €/mois) pour les Non-Abonnés
+    // MARK: - 1. Page de Présentation & Souscription Looby+ In-App (3,49 €/mois) pour les Non-Abonnés
 
     private var subscribeShowcaseContent: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Hero Carte 3,50 €/mois (Achat In-App StoreKit 2)
+            // Hero Carte 3,49 €/mois (Achat In-App StoreKit 2)
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Label("ABONNEMENT LOOBY+", systemImage: "crown.fill")
@@ -413,7 +413,7 @@ public struct LoobyPlusView: View {
                         .background(Capsule().fill(LivriaPalette.gold))
                         .foregroundStyle(.black)
                     Spacer()
-                    Text("3,50 € / mois")
+                    Text("3,49 € / mois")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(LivriaPalette.goldSoft)
                 }
@@ -460,7 +460,7 @@ public struct LoobyPlusView: View {
                         Text("Mon Abonnement Looby+")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundStyle(LivriaPalette.ink)
-                        Text("Formule mensuelle sans engagement • 3,50 € / mois")
+                        Text("Formule mensuelle sans engagement • 3,49 € / mois")
                             .font(.system(size: 12))
                             .foregroundStyle(LivriaPalette.inkMuted)
                     }
@@ -696,7 +696,7 @@ public struct LoobyPlusSubscriptionManagementView: View {
                         .foregroundStyle(.white)
 
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("3,50 €")
+                        Text("3,49 €")
                             .font(.system(size: 32, weight: .black, design: .rounded))
                             .foregroundStyle(LivriaPalette.gold)
                         Text("/ mois • Renouvellement mensuel")

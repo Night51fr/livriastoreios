@@ -761,7 +761,7 @@ public struct LivriaTradeRequestItem: Codable, Identifiable, Equatable, Sendable
     public var createdAt: String
 }
 
-// MARK: - Looby+ (Dashboard & Souscription 3,50 €/mois)
+// MARK: - Looby+ (Dashboard & Souscription 3,49 €/mois)
 
 public struct LivriaLoobyPlusState: Codable, Equatable, Sendable {
     public var isSubscribed: Bool

@@ -835,7 +835,7 @@ public struct LivriaStoreAccountHubView: View {
                         store.selectedMainTab = 3
                     } label: {
                         hubActionRow(
-                            title: "Abonnement Club Looby+ (3,50 €/mois)",
+                            title: "Abonnement Club Looby+ (3,49 €/mois)",
                             subtitle: "Livraison 0 €, 1 livre audio offert par mois, 5% de cagnotte et partage familial",
                             icon: "crown.fill",
                             color: LivriaPalette.gold

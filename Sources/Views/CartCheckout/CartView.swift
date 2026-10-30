@@ -54,7 +54,7 @@ public struct CartView: View {
             Text("Votre panier Livria Store est vide")
                 .font(.system(size: 19, weight: .bold, design: .rounded))
                 .foregroundStyle(LivriaPalette.ink)
-            Text("Parcourez la Boutique (Neuf & Occasion) ou ajoutez l'abonnement Looby+ (3,50 €/mois) pour commencer.")
+            Text("Parcourez la Boutique (Neuf & Occasion) ou ajoutez l'abonnement Looby+ (3,49 €/mois) pour commencer.")
                 .font(.system(size: 13.5))
                 .foregroundStyle(LivriaPalette.inkMuted)
                 .multilineTextAlignment(.center)
@@ -81,7 +81,7 @@ public struct CartView: View {
                 .font(.title2)
                 .foregroundStyle(LivriaPalette.gold)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Livraison 0 € immédiate avec Looby+ (3,50 €/mois)")
+                Text("Livraison 0 € immédiate avec Looby+ (3,49 €/mois)")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                 Text("Abonnement App Store sans engagement • 1 livre audio offert / mois")

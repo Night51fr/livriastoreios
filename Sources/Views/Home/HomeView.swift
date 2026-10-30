@@ -432,7 +432,7 @@ public struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 5. Bannière Looby+ (3,50 €/mois)
+    // MARK: - 5. Bannière Looby+ (3,49 €/mois)
 
     private var loobyPlusPromoBanner: some View {
         Button {
@@ -461,7 +461,7 @@ public struct HomeView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.white.opacity(0.88))
                     } else {
-                        Text("Rejoignez le Club Looby+ à 3,50 €/mois")
+                        Text("Rejoignez le Club Looby+ à 3,49 €/mois")
                             .font(.system(size: 15.5, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Livraison UPS 0 € dès le 1er livre, 1 livre audio offert/mois & 5% de cagnotte")

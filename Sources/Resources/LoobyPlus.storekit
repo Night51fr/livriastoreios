@@ -35,7 +35,7 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "3.50",
+          "displayPrice" : "3.49",
           "familyShareable" : true,
           "groupNumber" : 1,
           "internalID" : "6825159744",
@@ -49,7 +49,7 @@
           ],
           "productID" : "store.livria.loobyplus.monthly",
           "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Looby+ Mensuel (3,50 €/mois)",
+          "referenceName" : "Looby+ Mensuel (3,49 €/mois)",
           "subscriptionGroupID" : "21506825",
           "type" : "RecurringSubscription"
         }

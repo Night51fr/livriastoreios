@@ -32,7 +32,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     // In-App Purchase StoreKit 2 Looby+
     @Published public var isPurchasingLoobyPlus: Bool = false
     @Published public var isShowingLoobyPlusUnavailableAlert: Bool = false
-    @Published public var loobyPlusUnavailableMessage: String = "L'abonnement Looby+ (3,50 € / mois) est en cours de synchronisation avec l'App Store. Veuillez vérifier votre connexion App Store et réessayer."
+    @Published public var loobyPlusUnavailableMessage: String = "L'abonnement Looby+ (3,49 € / mois) est en cours de synchronisation avec l'App Store. Veuillez vérifier votre connexion App Store et réessayer."
     @Published public var loobyPlusStoreKitProduct: Product? = nil
     @Published public var hasLocalStoreKitLoobyPlusEntitlement: Bool = false
 
@@ -750,7 +750,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             } else {
                 let products = try await Product.products(for: [Self.loobyPlusProductID])
                 guard let firstProduct = products.first else {
-                    loobyPlusUnavailableMessage = "Le produit d'abonnement App Store (\(Self.loobyPlusProductID) — 3,50 € / mois) est en cours de chargement auprès d'Apple. Veuillez vérifier votre connexion à l'App Store et réessayer."
+                    loobyPlusUnavailableMessage = "Le produit d'abonnement App Store (\(Self.loobyPlusProductID) — 3,49 € / mois) est en cours de chargement auprès d'Apple. Veuillez vérifier votre connexion à l'App Store et réessayer."
                     isShowingLoobyPlusUnavailableAlert = true
                     return
                 }
