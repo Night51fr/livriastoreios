@@ -1263,6 +1263,29 @@ public struct LivriaBookChapter: Codable, Identifiable, Equatable, Hashable, Sen
     }
 }
 
+public struct LivriaSimpleResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var error: String?
+    public var message: String?
+
+    public init(ok: Bool = false, error: String? = nil, message: String? = nil) {
+        self.ok = ok
+        self.error = error
+        self.message = message
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ok, error, message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
+        error = try? c.decodeIfPresent(String.self, forKey: .error)
+        message = try? c.decodeIfPresent(String.self, forKey: .message)
+    }
+}
+
 public struct LivriaLibraryBookContentResponse: Codable, Equatable, Sendable {
     public var ok: Bool
     public var error: String?

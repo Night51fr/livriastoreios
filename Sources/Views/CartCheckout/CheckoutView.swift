@@ -226,9 +226,10 @@ public struct CheckoutView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if let done = completedOrder, done.ok {
                         orderSuccessCard(done: done)
-                    } else if store.isGuestSession {
-                        guestAuthRequiredCard
                     } else {
+                        if store.isGuestSession {
+                            guestOptionalAccountBanner
+                        }
                         expressWalletsViaPayPalCard
                         deliveryModeSelector
                         recipientAddressCard
@@ -336,28 +337,29 @@ public struct CheckoutView: View {
         }
     }
 
-    // MARK: - Connexion Viple Live ID Requise pour Acheter
+    // MARK: - Option de Connexion Facultative (Commande Invité 100% Autorisée — Guideline 5.1.1(v))
 
-    private var guestAuthRequiredCard: some View {
-        VStack(spacing: 16) {
+    private var guestOptionalAccountBanner: some View {
+        HStack(spacing: 12) {
             ZStack {
                 Circle()
                     .fill(LivriaPalette.primarySoft)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 42, height: 42)
                 Image(systemName: "person.badge.key.fill")
-                    .font(.system(size: 32, weight: .bold))
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(LivriaPalette.primary)
             }
 
-            Text("Connexion requise pour commander")
-                .font(.system(size: 21, weight: .black, design: .rounded))
-                .foregroundStyle(LivriaPalette.ink)
-                .multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Commande rapide sans compte")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+                Text("Vous pouvez commander sans inscription, ou vous connecter en option pour synchroniser vos achats sur tous vos appareils.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(LivriaPalette.inkMuted)
+            }
 
-            Text("Pour acheter vos livres Neuf & Occasion sur Livria Store et générer votre bordereau de livraison UPS, vous devez être connecté avec votre compte Viple Live ID.")
-                .font(.system(size: 13.5))
-                .foregroundStyle(LivriaPalette.inkMuted)
-                .multilineTextAlignment(.center)
+            Spacer()
 
             Button {
                 dismiss()
@@ -365,22 +367,16 @@ public struct CheckoutView: View {
                     store.isShowingAuthSheet = true
                 }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.crop.circle.badge.checkmark")
-                    Text("Se connecter / Créer un compte Viple Live ID")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(LinearGradient(colors: [LivriaPalette.primary, LivriaPalette.coral], startPoint: .leading, endPoint: .trailing))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Text("Connexion")
+                    .font(.system(size: 12, weight: .bold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(LivriaPalette.primary.opacity(0.12)))
+                    .foregroundStyle(LivriaPalette.primary)
             }
             .buttonStyle(.plain)
         }
-        .padding(22)
-        .frame(maxWidth: .infinity)
-        .livriaCard()
+        .livriaCard(padding: 14)
     }
 
     // MARK: - Sélection du Mode de Paiement (PayPal / Apple Pay / Google Pay synchronisé avec /admin)

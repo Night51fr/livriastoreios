@@ -20,7 +20,11 @@ public struct LoobyPlusView: View {
     public init() {}
 
     private var isSubscribed: Bool {
-        store.currentUser?.isLivriaPlus == true || store.loobyPlus?.isSubscribed == true
+        store.hasLocalStoreKitLoobyPlusEntitlement || store.currentUser?.isLivriaPlus == true || store.loobyPlus?.isSubscribed == true
+    }
+
+    private var formattedSubscriptionPrice: String {
+        store.loobyPlusStoreKitProduct?.displayPrice ?? "3,50 €"
     }
 
     /// Uniquement les livres qui disposent effectivement d'un format Audio
@@ -32,19 +36,28 @@ public struct LoobyPlusView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
-                    if !store.isAuthenticated {
-                        guestRestrictedCard
-                    } else if isSubscribed {
+                    if isSubscribed {
                         subscriberDashboardContent
                     } else {
                         subscribeShowcaseContent
                     }
+
+                    if !store.isAuthenticated {
+                        optionalMultiDeviceAccountCard
+                    }
+
+                    subscriptionLegalDisclosuresCard
                 }
                 .padding(16)
             }
             .livriaThemedBackground(store.currentThemeId)
             .navigationTitle(isSubscribed ? "Dashboard Looby+" : "Souscrire à Looby+")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                if store.loobyPlusStoreKitProduct == nil {
+                    await store.preloadLoobyPlusStoreKitProductAndEntitlements()
+                }
+            }
             .onAppear {
                 if let pref = store.loobyPlus?.boxPreferences {
                     boxGenres = pref.preferredGenres
@@ -69,48 +82,181 @@ public struct LoobyPlusView: View {
         }
     }
 
-    // MARK: - 0. Accès Réservé aux Comptes Connectés Viple Live ID
+    // MARK: - 0. Synchronisation Multi-Appareils Optionnelle (Guideline 5.1.1(v) — L'inscription n'est jamais obligatoire)
 
-    private var guestRestrictedCard: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(LivriaPalette.goldSoft)
-                    .frame(width: 68, height: 68)
-                Image(systemName: "crown.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(LivriaPalette.gold)
+    private var optionalMultiDeviceAccountCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LivriaPalette.goldSoft)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "ipad.and.iphone")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color(red: 0.65, green: 0.35, blue: 0.02))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Synchronisation multi-appareils")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(LivriaPalette.ink)
+                        Text("OPTIONNEL")
+                            .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(LivriaPalette.primary.opacity(0.12)))
+                            .foregroundStyle(LivriaPalette.primary)
+                    }
+                    Text("Aucun compte n'est requis pour souscrire ou utiliser Looby+ sur cet appareil.")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                }
             }
 
-            Text("Compte requis pour Looby+")
-                .font(.system(size: 21, weight: .black, design: .serif))
-                .foregroundStyle(LivriaPalette.ink)
-                .multilineTextAlignment(.center)
-
-            Text("Pour souscrire à l'abonnement Looby+ (en achat intégré In-App) et profiter de la livraison offerte, du livre audio mensuel et du partage familial, connectez-vous ou créez gratuitement votre compte Viple Live ID.")
-                .font(.system(size: 13.5))
+            Text("Vous pouvez acheter et utiliser votre abonnement Looby+ immédiatement sans inscription. Si vous souhaitez ultérieurement étendre l'accès à votre abonnement et à vos livres audio sur d'autres appareils compatibles, vous pouvez créer ou connecter un compte Viple Live ID à tout moment.")
+                .font(.system(size: 12.5))
                 .foregroundStyle(LivriaPalette.inkMuted)
-                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button {
                 store.isShowingAuthSheet = true
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.badge.key.fill")
-                    Text("Se connecter ou créer un compte")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text("Se connecter ou créer un compte (Optionnel)")
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(LivriaPalette.heroGradient)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(LivriaPalette.primary.opacity(0.10)))
+                .foregroundStyle(LivriaPalette.primary)
             }
             .buttonStyle(.plain)
         }
-        .padding(22)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(LivriaPalette.cardPaper))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LivriaPalette.border, lineWidth: 1))
+        .livriaCard()
+    }
+
+    // MARK: - 0b. Informations Légales Obligatoires sur l'Abonnement Auto-Renouvelable (Guideline 3.1.2(c))
+
+    private var subscriptionLegalDisclosuresCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .foregroundStyle(LivriaPalette.primary)
+                Text("Informations sur l'abonnement auto-renouvelable")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Titre de l'abonnement :")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                    Spacer()
+                    Text(store.loobyPlusStoreKitProduct?.displayName ?? "Abonnement Looby+ Mensuel")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(LivriaPalette.ink)
+                }
+                HStack {
+                    Text("Durée de l'abonnement :")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                    Spacer()
+                    Text("1 mois (renouvellement mensuel)")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(LivriaPalette.ink)
+                }
+                HStack {
+                    Text("Prix de l'abonnement :")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                    Spacer()
+                    Text("\(formattedSubscriptionPrice) / mois")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(LivriaPalette.primary)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(LivriaPalette.background))
+
+            Text("• Le paiement de \(formattedSubscriptionPrice) sera débité de votre compte Identifiant Apple lors de la confirmation de l'achat.\n• L'abonnement se renouvelle automatiquement chaque mois au tarif de \(formattedSubscriptionPrice) / mois, sauf si le renouvellement automatique est désactivé au moins 24 heures avant la fin de la période mensuelle en cours.\n• Votre compte sera facturé pour le renouvellement dans les 24 heures précédant la fin de la période en cours.\n• Vous pouvez gérer votre abonnement et désactiver le renouvellement automatique à tout moment après l'achat dans les Réglages de votre compte App Store.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(LivriaPalette.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    if let privacyUrl = URL(string: "https://livria.store/privacy") {
+                        Link(destination: privacyUrl) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "hand.raised.fill")
+                                    .font(.caption2)
+                                Text("Politique de Confidentialité")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LivriaPalette.background))
+                            .foregroundStyle(LivriaPalette.primary)
+                        }
+                    }
+
+                    if let appleEulaUrl = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/") {
+                        Link(destination: appleEulaUrl) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "doc.badge.gearshape.fill")
+                                    .font(.caption2)
+                                Text("Conditions d'Utilisation (EULA)")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LivriaPalette.background))
+                            .foregroundStyle(LivriaPalette.primary)
+                        }
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    if let livriaTermsUrl = URL(string: "https://livria.store/eula") {
+                        Link(destination: livriaTermsUrl) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "safari.fill")
+                                    .font(.caption2)
+                                Text("CGU / CGV Livria Store (Web)")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LivriaPalette.background))
+                            .foregroundStyle(LivriaPalette.ink)
+                        }
+                    }
+
+                    Button {
+                        store.isShowingTermsReviewSheet = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "book.closed.fill")
+                                .font(.caption2)
+                            Text("Lire CGU / Confidentialité")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LivriaPalette.background))
+                        .foregroundStyle(LivriaPalette.ink)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .livriaCard()
     }
 
     // MARK: - 1. Page de Présentation & Souscription Looby+ In-App (3,50 €/mois) pour les Non-Abonnés
@@ -132,15 +278,19 @@ public struct LoobyPlusView: View {
                         .foregroundStyle(.white.opacity(0.85))
                 }
 
-                Text("Toute la magie de Livria en illimité pour seulement 3,50 € / mois")
+                Text(store.loobyPlusStoreKitProduct?.displayName ?? "Abonnement Looby+ Mensuel")
                     .font(.system(size: 24, weight: .black, design: .serif))
                     .foregroundStyle(.white)
 
+                Text("Toute la magie de Livria en illimité • Durée : 1 mois (renouvellement automatique mensuel)")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("3,50 €")
+                    Text(formattedSubscriptionPrice)
                         .font(.system(size: 38, weight: .black, design: .rounded))
                         .foregroundStyle(LivriaPalette.gold)
-                    Text("/ mois • Sans engagement")
+                    Text("/ mois (1 mois) • Sans engagement")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                 }
@@ -158,7 +308,7 @@ public struct LoobyPlusView: View {
                             } else {
                                 Image(systemName: "apple.logo")
                             }
-                            Text("S'abonner dans l'app (3,50 € / mois)")
+                            Text("S'abonner à Looby+ (\(formattedSubscriptionPrice) / mois)")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                         }
                         .frame(maxWidth: .infinity)
@@ -187,6 +337,24 @@ public struct LoobyPlusView: View {
                         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.35), lineWidth: 1))
                     }
                     .disabled(store.isPurchasingLoobyPlus)
+
+                    HStack(spacing: 16) {
+                        if let privacyUrl = URL(string: "https://livria.store/privacy") {
+                            Link("Politique de Confidentialité", destination: privacyUrl)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(LivriaPalette.goldSoft)
+                                .underline()
+                        }
+                        Text("•")
+                            .foregroundStyle(.white.opacity(0.6))
+                        if let eulaUrl = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/") {
+                            Link("Conditions d'Utilisation (EULA)", destination: eulaUrl)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(LivriaPalette.goldSoft)
+                                .underline()
+                        }
+                    }
+                    .padding(.top, 4)
                 }
             }
             .padding(20)

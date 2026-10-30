@@ -84,17 +84,16 @@ public struct CartView: View {
                 Text("Livraison 0 € immédiate avec Looby+ (3,50 €/mois)")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
-                Text("Ajoutez Looby+ au panier pour économiser les 3,90 € de port UPS !")
+                Text("Abonnement App Store sans engagement • 1 livre audio offert / mois")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.white.opacity(0.88))
             }
             Spacer()
             Button {
-                Task {
-                    await store.addLoobyPlusSubscriptionToCart(openCheckoutImmediately: false)
-                }
+                dismiss()
+                store.selectedMainTab = 3
             } label: {
-                Text("+ 3,50 €")
+                Text("Découvrir")
                     .font(.system(size: 12.5, weight: .black))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -214,30 +213,24 @@ public struct CartView: View {
         VStack(spacing: 6) {
             if store.isGuestSession {
                 HStack(spacing: 6) {
-                    Image(systemName: "person.badge.key.fill")
+                    Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(LivriaPalette.primary)
-                    Text("Connexion Viple Live ID requise pour finaliser votre achat")
-                        .font(.system(size: 11.5, weight: .bold))
-                        .foregroundStyle(LivriaPalette.primary)
+                    Text("Commande rapide disponible sans compte (connexion optionnelle)")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(LivriaPalette.inkMuted)
                 }
             }
             Button {
                 dismiss()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    if store.requireAuthenticationForPurchase(reason: "passer commande sur Livria Store") {
-                        store.isShowingCheckoutSheet = true
-                    }
+                    store.isShowingCheckoutSheet = true
                 }
             } label: {
                 HStack {
-                    Image(systemName: store.isGuestSession ? "person.crop.circle.badge.checkmark" : "lock.shield.fill")
-                    Text(
-                        store.isGuestSession
-                            ? "Se connecter pour commander (\(String(format: "%.2f €", store.cartTotal)))"
-                            : "Passer au Checkout (\(String(format: "%.2f €", store.cartTotal)))"
-                    )
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    Image(systemName: "lock.shield.fill")
+                    Text("Passer au Checkout (\(String(format: "%.2f €", store.cartTotal)))")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)

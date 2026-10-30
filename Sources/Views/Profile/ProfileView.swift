@@ -1116,14 +1116,17 @@ public struct LivriaMyLibraryView: View {
                 headerBannerCard
                 searchAndFilterBar
 
-                if !store.isAuthenticated {
-                    guestLibraryNoticeCard
-                } else if filteredShelf.isEmpty {
-                    emptyLibraryStateCard
-                } else {
+                if !filteredShelf.isEmpty {
                     ForEach(filteredShelf) { entry in
                         libraryEntryCard(entry)
                     }
+                    if !store.isAuthenticated {
+                        guestLibraryNoticeCard
+                    }
+                } else if !store.isAuthenticated {
+                    guestLibraryNoticeCard
+                } else {
+                    emptyLibraryStateCard
                 }
             }
             .padding(16)

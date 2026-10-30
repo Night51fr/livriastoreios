@@ -20,6 +20,8 @@ public struct LivriaStoreLegalTermsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         headerCard
 
+                        externalLinksCard
+
                         ForEach(Self.legalArticles) { article in
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 8) {
@@ -94,6 +96,53 @@ public struct LivriaStoreLegalTermsView: View {
             LivriaMeshHeroBackground()
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         )
+    }
+
+    private var externalLinksCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "link.circle.fill")
+                    .foregroundStyle(LivriaPalette.primary)
+                Text("Documents légaux officiels & Abonnement App Store")
+                    .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(LivriaPalette.ink)
+            }
+
+            HStack(spacing: 10) {
+                if let privacyUrl = URL(string: "https://livria.store/privacy") {
+                    Link(destination: privacyUrl) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.caption2)
+                            Text("Politique de Confidentialité")
+                                .font(.system(size: 12, weight: .bold))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LivriaPalette.background))
+                        .foregroundStyle(LivriaPalette.primary)
+                    }
+                }
+
+                if let appleEulaUrl = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/") {
+                    Link(destination: appleEulaUrl) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "doc.badge.gearshape.fill")
+                                .font(.caption2)
+                            Text("Conditions d'Utilisation (EULA)")
+                                .font(.system(size: 12, weight: .bold))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LivriaPalette.background))
+                        .foregroundStyle(LivriaPalette.primary)
+                    }
+                }
+            }
+        }
+        .livriaCard(padding: 14)
     }
 
     private var bottomActionCard: some View {
@@ -211,14 +260,14 @@ public struct LivriaStoreLegalTermsView: View {
         LegalArticle(
             id: 7,
             icon: "crown.fill",
-            title: "7. Abonnement Club Looby+ et Espace Troc",
-            body: "L'abonnement Club Looby+ (3,50 €/mois sans engagement) offre la livraison gratuite illimitée, un crédit livre audio mensuel, 5 % de cashback en cagnotte et le partage familial. L'Espace Troc permet aux lecteurs d'échanger leurs ouvrages de manière conviviale dans le respect de l'état annoncé."
+            title: "7. Abonnement Auto-Renouvelable Club Looby+ (3,50 € / mois)",
+            body: "Titre de l'abonnement : Abonnement Looby+ Mensuel (identifiant App Store : store.livria.loobyplus.monthly). Durée : 1 mois (renouvellement automatique mensuel). Prix : 3,50 € / mois TTC sans engagement. L'abonnement peut être souscrit et utilisé avec ou sans création de compte préalable. Le paiement est débité du compte Identifiant Apple à la confirmation de l'achat et se renouvelle automatiquement sauf résiliation au moins 24 heures avant la fin de la période en cours depuis les Réglages du compte App Store. Le contrat de licence standard d'Apple (https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) ainsi que nos CGU/CGV (https://livria.store/eula) s'appliquent."
         ),
         LegalArticle(
             id: 8,
             icon: "lock.shield.fill",
-            title: "8. Protection des données personnelles (RGPD)",
-            body: "Conformément au Règlement Général sur la Protection des Données (RGPD), les données collectées (identité, coordonnées postales de livraison, historique de commandes et préférences de lecture) sont traitées exclusivement pour l'exécution de vos commandes et la gestion de votre compte Viple Live ID. Vous pouvez exercer vos droits d'accès, de modification et de suppression à tout moment depuis votre profil ou auprès du service client."
+            title: "8. Politique de Confidentialité et Protection des Données (RGPD)",
+            body: "Conformément au Règlement Général sur la Protection des Données (RGPD), aucune création de compte personnelle n'est imposée pour souscrire à un achat intégré ou naviguer dans l'application. Notre Politique de Confidentialité complète est consultable à tout moment sur https://livria.store/privacy. Vous pouvez exercer vos droits d'accès, de modification et de suppression en 1 clic depuis votre profil ou auprès du service client."
         )
     ]
 }

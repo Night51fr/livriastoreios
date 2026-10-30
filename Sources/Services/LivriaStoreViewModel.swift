@@ -32,7 +32,9 @@ public final class LivriaStoreViewModel: ObservableObject {
     // In-App Purchase StoreKit 2 Looby+
     @Published public var isPurchasingLoobyPlus: Bool = false
     @Published public var isShowingLoobyPlusUnavailableAlert: Bool = false
-    @Published public var loobyPlusUnavailableMessage: String = "Looby+ pourra être souscrit prochainement directement depuis l'application."
+    @Published public var loobyPlusUnavailableMessage: String = "L'abonnement Looby+ (3,50 € / mois) est en cours de synchronisation avec l'App Store. Veuillez vérifier votre connexion App Store et réessayer."
+    @Published public var loobyPlusStoreKitProduct: Product? = nil
+    @Published public var hasLocalStoreKitLoobyPlusEntitlement: Bool = false
 
     // État Serveur Indisponible / Timeout 20s / HTTP 503
     @Published public var isServerUnreachable: Bool = false
@@ -151,6 +153,7 @@ public final class LivriaStoreViewModel: ObservableObject {
                 async let minSplashDelay: Void = {
                     try? await Task.sleep(nanoseconds: 1_400_000_000)
                 }()
+                await preloadLoobyPlusStoreKitProductAndEntitlements()
                 await refreshBootstrap(email: email, userId: savedUid > 0 ? savedUid : nil)
                 _ = await minSplashDelay
                 withAnimation(.easeInOut(duration: 0.45)) {
@@ -165,6 +168,7 @@ public final class LivriaStoreViewModel: ObservableObject {
                 async let minSplashDelay: Void = {
                     try? await Task.sleep(nanoseconds: 1_400_000_000)
                 }()
+                await preloadLoobyPlusStoreKitProductAndEntitlements()
                 await refreshBootstrap(email: guestEmail, userId: savedUid > 0 ? savedUid : nil)
                 _ = await minSplashDelay
                 withAnimation(.easeInOut(duration: 0.45)) {
@@ -700,23 +704,58 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Abonnement Looby+ par Achat Intégré Apple (StoreKit 2 In-App Purchase)
+    // MARK: - Abonnement Looby+ par Achat Intégré Apple (StoreKit 2 In-App Purchase - Sans obligation d'inscription préalable)
+
+    public func preloadLoobyPlusStoreKitProductAndEntitlements() async {
+        do {
+            let products = try await Product.products(for: [Self.loobyPlusProductID])
+            if let product = products.first {
+                self.loobyPlusStoreKitProduct = product
+            }
+        } catch {
+            print("[StoreKit] Impossible de précharger le produit Looby+: \(error.localizedDescription)")
+        }
+
+        for await entitlement in Transaction.currentEntitlements {
+            if case .verified(let transaction) = entitlement,
+               transaction.productID == Self.loobyPlusProductID {
+                self.hasLocalStoreKitLoobyPlusEntitlement = true
+                let targetUid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+                let targetEmail = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? getOrCreateGuestEmail()
+                _ = try? await LivriaAPIClient.shared.activateLoobyPlusIap(
+                    userId: targetUid,
+                    email: targetEmail,
+                    cid: currentUser?.cid,
+                    productId: transaction.productID,
+                    transactionId: String(transaction.id)
+                )
+                break
+            }
+        }
+    }
 
     public func purchaseLoobyPlusInApp() async {
-        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
-            isShowingAuthSheet = true
-            return
-        }
+        // Guideline 5.1.1(v) : L'achat In-App Looby+ est accessible immédiatement sans obliger l'utilisateur à créer un compte au préalable.
         isPurchasingLoobyPlus = true
         defer { isPurchasingLoobyPlus = false }
 
+        let targetUid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let targetEmail = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? getOrCreateGuestEmail()
+        let targetCid = currentUser?.cid
+
         do {
-            let products = try await Product.products(for: [Self.loobyPlusProductID])
-            guard let product = products.first else {
-                // Si l'application ou le produit In-App n'est pas encore publié sur l'App Store, ne JAMAIS valider sans paiement
-                loobyPlusUnavailableMessage = "Looby+ pourra être souscrit prochainement directement depuis l'application."
-                isShowingLoobyPlusUnavailableAlert = true
-                return
+            let product: Product
+            if let cached = loobyPlusStoreKitProduct {
+                product = cached
+            } else {
+                let products = try await Product.products(for: [Self.loobyPlusProductID])
+                guard let firstProduct = products.first else {
+                    loobyPlusUnavailableMessage = "Le produit d'abonnement App Store (\(Self.loobyPlusProductID) — 3,50 € / mois) est en cours de chargement auprès d'Apple. Veuillez vérifier votre connexion à l'App Store et réessayer."
+                    isShowingLoobyPlusUnavailableAlert = true
+                    return
+                }
+                self.loobyPlusStoreKitProduct = firstProduct
+                product = firstProduct
             }
 
             let result = try await product.purchase()
@@ -725,14 +764,23 @@ public final class LivriaStoreViewModel: ObservableObject {
                 switch verification {
                 case .verified(let transaction):
                     await transaction.finish()
-                    let res = try await LivriaAPIClient.shared.activateLoobyPlusIap(
-                        userId: user.id,
-                        email: user.email,
-                        cid: user.cid,
+                    self.hasLocalStoreKitLoobyPlusEntitlement = true
+                    if var updatedUser = currentUser {
+                        updatedUser.isLivriaPlus = true
+                        currentUser = updatedUser
+                    }
+                    if var updatedPlus = loobyPlus {
+                        updatedPlus.isSubscribed = true
+                        loobyPlus = updatedPlus
+                    }
+                    let res = try? await LivriaAPIClient.shared.activateLoobyPlusIap(
+                        userId: targetUid,
+                        email: targetEmail,
+                        cid: targetCid,
                         productId: product.id,
                         transactionId: String(transaction.id)
                     )
-                    showToast((res["message"] as? String) ?? "Abonnement Looby+ activé via l'App Store !")
+                    showToast((res?["message"] as? String) ?? "Abonnement Looby+ activé via l'App Store !")
                     await refreshBootstrap()
                 case .unverified(_, _):
                     showToast("La vérification de la transaction App Store a échoué.")
@@ -745,18 +793,19 @@ public final class LivriaStoreViewModel: ObservableObject {
                 break
             }
         } catch {
-            loobyPlusUnavailableMessage = "Looby+ pourra être souscrit prochainement directement depuis l'application."
+            loobyPlusUnavailableMessage = "Impossible de finaliser l'achat sur l'App Store : \(error.localizedDescription)"
             isShowingLoobyPlusUnavailableAlert = true
         }
     }
 
     public func restoreLoobyPlusPurchases() async {
-        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
-            isShowingAuthSheet = true
-            return
-        }
+        // Guideline 5.1.1(v) : La restauration d'un abonnement App Store ne nécessite pas d'inscription obligatoire.
         isPurchasingLoobyPlus = true
         defer { isPurchasingLoobyPlus = false }
+
+        let targetUid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let targetEmail = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? getOrCreateGuestEmail()
+        let targetCid = currentUser?.cid
 
         do {
             try await AppStore.sync()
@@ -765,10 +814,19 @@ public final class LivriaStoreViewModel: ObservableObject {
                 if case .verified(let transaction) = entitlement,
                    transaction.productID == Self.loobyPlusProductID {
                     foundActive = true
-                    _ = try await LivriaAPIClient.shared.activateLoobyPlusIap(
-                        userId: user.id,
-                        email: user.email,
-                        cid: user.cid,
+                    self.hasLocalStoreKitLoobyPlusEntitlement = true
+                    if var updatedUser = currentUser {
+                        updatedUser.isLivriaPlus = true
+                        currentUser = updatedUser
+                    }
+                    if var updatedPlus = loobyPlus {
+                        updatedPlus.isSubscribed = true
+                        loobyPlus = updatedPlus
+                    }
+                    _ = try? await LivriaAPIClient.shared.activateLoobyPlusIap(
+                        userId: targetUid,
+                        email: targetEmail,
+                        cid: targetCid,
                         productId: transaction.productID,
                         transactionId: String(transaction.id)
                     )
@@ -787,15 +845,12 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func cancelLoobyPlusSubscription() async -> Bool {
-        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
-            isShowingAuthSheet = true
-            return false
-        }
         isPurchasingLoobyPlus = true
         defer { isPurchasingLoobyPlus = false }
 
         do {
             let res = try await LivriaAPIClient.shared.postRaw("/loobyplus/cancel", body: userAuthFields)
+            self.hasLocalStoreKitLoobyPlusEntitlement = false
             if var updatedUser = currentUser {
                 updatedUser.isLivriaPlus = false
                 currentUser = updatedUser
@@ -834,6 +889,10 @@ public final class LivriaStoreViewModel: ObservableObject {
                 defaults.set(incomingUser.themeId, forKey: savedThemeKey)
             }
 
+            if self.hasLocalStoreKitLoobyPlusEntitlement {
+                incomingUser.isLivriaPlus = true
+            }
+
             self.currentUser = incomingUser
             self.isAuthenticated = !incomingUser.isGuestAccount
             self.homeData = boot.home
@@ -848,7 +907,11 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.orders = boot.orders
             self.shelf = Self.mergeShelfAndOrders(serverShelf: boot.shelf ?? [], orders: boot.orders, catalogBooks: boot.books)
             self.trades = boot.trades
-            self.loobyPlus = boot.loobyPlus
+            var incomingPlus = boot.loobyPlus
+            if self.hasLocalStoreKitLoobyPlusEntitlement {
+                incomingPlus?.isSubscribed = true
+            }
+            self.loobyPlus = incomingPlus
             self.relays = boot.relays
             self.games = boot.games
             self.supportTickets = boot.supportTickets
@@ -934,22 +997,15 @@ public final class LivriaStoreViewModel: ObservableObject {
         await performMemberSearch(query: query)
     }
 
-    // MARK: - 4. Panier (Neuf & Occasion), Abonnement Looby+ & Checkout (Compte Viple Live ID obligatoire pour acheter)
+    // MARK: - 4. Panier (Neuf & Occasion), Abonnement Looby+ & Checkout (Achat avec ou sans compte Viple Live ID — Guideline 5.1.1(v))
 
     @discardableResult
     public func requireAuthenticationForPurchase(reason: String = "acheter sur Livria Store") -> Bool {
-        guard !isGuestSession, isAuthenticated, let u = currentUser, !u.isGuestAccount else {
-            isShowingCartSheet = false
-            isShowingCheckoutSheet = false
-            isShowingAuthSheet = true
-            showToast("Connectez-vous avec votre compte Viple Live ID pour \(reason).")
-            return false
-        }
+        // Guideline 5.1.1(v) : L'application autorise l'achat et l'abonnement sans inscription obligatoire.
         return true
     }
 
     public func addToCart(bookId: Int, format: String = "Broché", quantity: Int = 1) async {
-        guard requireAuthenticationForPurchase(reason: "ajouter un article au panier et acheter") else { return }
         var payload = userAuthFields
         payload["bookId"] = bookId
         payload["format"] = format
@@ -978,25 +1034,11 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func addLoobyPlusSubscriptionToCart(openCheckoutImmediately: Bool = false) async {
-        guard requireAuthenticationForPurchase(reason: "souscrire à Looby+") else { return }
-        let payload = userAuthFields
-        do {
-            let res = try await LivriaAPIClient.shared.postRaw("/cart/add-loobyplus", body: payload)
-            let msg = (res["message"] as? String) ?? "Abonnement Looby+ (3,50 €/mois) ajouté au panier !"
-            showToast(msg)
-            await refreshBootstrap()
-            if openCheckoutImmediately {
-                isShowingCheckoutSheet = true
-            } else {
-                isShowingCartSheet = true
-            }
-        } catch {
-            showToast(error.localizedDescription)
-        }
+        // Sur iOS, l'abonnement Looby+ passe exclusivement par l'achat intégré Apple StoreKit 2 (Guideline 3.1.1 / 3.1.2)
+        await purchaseLoobyPlusInApp()
     }
 
     public func createPayPalExpressSession(walletSource: String, amount: Double) async -> LivriaPayPalCreateResponse? {
-        guard requireAuthenticationForPurchase(reason: "régler votre commande") else { return nil }
         do {
             return try await LivriaAPIClient.shared.createPayPalExpressOrder(amount: max(0.50, amount), walletSource: walletSource)
         } catch {
@@ -1026,8 +1068,8 @@ public final class LivriaStoreViewModel: ObservableObject {
         payPalOrderId: String? = nil,
         addSuspendedBook: Bool = false
     ) async -> LivriaCheckoutResponse? {
-        guard requireAuthenticationForPurchase(reason: "passer commande sur Livria Store") else { return nil }
-        let resolvedEmail = !guestEmail.isEmpty ? guestEmail : email
+        let fallbackEmail = currentUser?.email ?? getOrCreateGuestEmail()
+        let resolvedEmail = !guestEmail.isEmpty ? guestEmail : (!email.isEmpty ? email : fallbackEmail)
         let resolvedWallet: String = {
             if paymentMethod.lowercased().contains("apple") { return "apple_pay" }
             if paymentMethod.lowercased().contains("google") { return "google_pay" }
