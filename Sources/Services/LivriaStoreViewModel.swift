@@ -909,7 +909,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.trades = boot.trades
             var incomingPlus = boot.loobyPlus
             if self.hasLocalStoreKitLoobyPlusEntitlement {
-                incomingPlus?.isSubscribed = true
+                incomingPlus.isSubscribed = true
             }
             self.loobyPlus = incomingPlus
             self.relays = boot.relays
