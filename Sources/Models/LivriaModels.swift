@@ -577,10 +577,6 @@ public struct LivriaCartItem: Codable, Identifiable, Equatable, Sendable {
         isUsedFormat == true || format.lowercased().hasPrefix("occasion")
     }
 
-    public var isLoobyPlusSubscription: Bool {
-        format == "Abonnement" || title.lowercased().contains("looby+")
-    }
-
     public var resolvedCoverURL: URL? {
         LivriaURLResolver.resolve(coverUrl)
     }
@@ -761,7 +757,7 @@ public struct LivriaTradeRequestItem: Codable, Identifiable, Equatable, Sendable
     public var createdAt: String
 }
 
-// MARK: - Looby+ (Dashboard & Souscription 3,49 €/mois)
+// MARK: - Looby+ (Bientôt disponible sur iOS)
 
 public struct LivriaLoobyPlusState: Codable, Equatable, Sendable {
     public var isSubscribed: Bool

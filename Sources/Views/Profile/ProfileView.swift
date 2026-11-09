@@ -311,7 +311,7 @@ public struct ProfileView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(LivriaPalette.gold)
-                        Text(store.currentUser?.isLivriaPlus == true ? "Abonné Club Looby+" : "Membre Livria")
+                        Text("Membre Livria")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.white.opacity(0.95))
                     }

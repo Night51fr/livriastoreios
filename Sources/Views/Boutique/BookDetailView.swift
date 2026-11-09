@@ -38,9 +38,6 @@ public struct BookDetailView: View {
     }
 
     private var displayedPrice: Double {
-        if store.currentUser?.isLivriaPlus == true && (selectedFormat == "Numérique" || selectedFormat == "Audio") {
-            return 0.0
-        }
         if selectedFormat == "Broché" && selectedConditionIsUsed {
             return book.effectiveUsedPrice
         }
@@ -178,12 +175,10 @@ public struct BookDetailView: View {
 
                 // Prix selon l'état sélectionné
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(displayedPrice == 0 ? "Inclus Looby+ (0,00 €)" : String(format: "%.2f €", displayedPrice))
+                    Text(String(format: "%.2f €", displayedPrice))
                         .font(.system(size: 24, weight: .black, design: .rounded))
                         .foregroundStyle(
-                            displayedPrice == 0
-                                ? LivriaPalette.mint
-                                : (selectedFormat == "Broché" && selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.primary)
+                            selectedFormat == "Broché" && selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.primary
                         )
 
                     if selectedFormat == "Broché" {

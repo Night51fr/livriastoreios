@@ -87,7 +87,7 @@ public struct LivriaStoreLegalTermsView: View {
                 .font(.system(size: 19, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
 
-            Text("Veuillez prendre connaissance des présentes Conditions Générales régissant vos achats en librairie (neuf, occasion, numérique et audio), l'espace troc, l'abonnement Club Looby+ ainsi que votre compte unifié Viple Live ID.")
+            Text("Veuillez prendre connaissance des présentes Conditions Générales régissant vos achats en librairie (neuf, occasion, numérique et audio), l'espace troc ainsi que votre compte unifié Viple Live ID.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(.white.opacity(0.9))
         }
@@ -103,7 +103,7 @@ public struct LivriaStoreLegalTermsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "link.circle.fill")
                     .foregroundStyle(LivriaPalette.primary)
-                Text("Documents légaux officiels & Abonnement App Store")
+                Text("Documents légaux officiels")
                     .font(.system(size: 14.5, weight: .bold, design: .rounded))
                     .foregroundStyle(LivriaPalette.ink)
             }
@@ -243,7 +243,7 @@ public struct LivriaStoreLegalTermsView: View {
             id: 4,
             icon: "creditcard.fill",
             title: "4. Modalités de paiement sécurisé",
-            body: "Le règlement des commandes s'effectue via les moyens de paiement actifs lors de la validation du panier (PayPal, Apple Pay, Google Pay, points de fidélité et cagnotte Looby+). Certains modes de paiement peuvent être momentanément désactivés pour maintenance et apparaissent alors comme indisponibles. Toute commande payée est confirmée dès validation de la transaction."
+            body: "Le règlement des commandes s'effectue via les moyens de paiement actifs lors de la validation du panier (PayPal, Apple Pay, Google Pay, points de fidélité et cagnotte Livria). Certains modes de paiement peuvent être momentanément désactivés pour maintenance et apparaissent alors comme indisponibles. Toute commande payée est confirmée dès validation de la transaction."
         ),
         LegalArticle(
             id: 5,
@@ -260,14 +260,14 @@ public struct LivriaStoreLegalTermsView: View {
         LegalArticle(
             id: 7,
             icon: "crown.fill",
-            title: "7. Abonnement Auto-Renouvelable Club Looby+ (3,49 € / mois)",
-            body: "Titre de l'abonnement : Abonnement Looby+ Mensuel (identifiant App Store : store.livria.loobyplus.monthly). Durée : 1 mois (renouvellement automatique mensuel). Prix : 3,49 € / mois TTC sans engagement. L'abonnement peut être souscrit et utilisé avec ou sans création de compte préalable. Le paiement est débité du compte Identifiant Apple à la confirmation de l'achat et se renouvelle automatiquement sauf résiliation au moins 24 heures avant la fin de la période en cours depuis les Réglages du compte App Store. Le contrat de licence standard d'Apple (https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) ainsi que nos CGU/CGV (https://livria.store/eula) s'appliquent."
+            title: "7. Programme Looby+",
+            body: "Looby+ sera disponible prochainement dans l'appli iOS."
         ),
         LegalArticle(
             id: 8,
             icon: "lock.shield.fill",
             title: "8. Politique de Confidentialité et Protection des Données (RGPD)",
-            body: "Conformément au Règlement Général sur la Protection des Données (RGPD), aucune création de compte personnelle n'est imposée pour souscrire à un achat intégré ou naviguer dans l'application. Notre Politique de Confidentialité complète est consultable à tout moment sur https://livria.store/privacy. Vous pouvez exercer vos droits d'accès, de modification et de suppression en 1 clic depuis votre profil ou auprès du service client."
+            body: "Conformément au Règlement Général sur la Protection des Données (RGPD), aucune création de compte personnelle n'est imposée pour naviguer dans l'application. Notre Politique de Confidentialité complète est consultable à tout moment sur https://livria.store/privacy. Vous pouvez exercer vos droits d'accès, de modification et de suppression en 1 clic depuis votre profil ou auprès du service client."
         )
     ]
 }

@@ -16,10 +16,6 @@ public struct CartView: View {
                 } else {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 14) {
-                            if store.currentUser?.isLivriaPlus != true && !store.hasLoobyPlusInCart {
-                                loobyPlusUpsellBanner
-                            }
-
                             ForEach(store.cart) { item in
                                 cartItemRow(item: item)
                             }
@@ -54,7 +50,7 @@ public struct CartView: View {
             Text("Votre panier Livria Store est vide")
                 .font(.system(size: 19, weight: .bold, design: .rounded))
                 .foregroundStyle(LivriaPalette.ink)
-            Text("Parcourez la Boutique (Neuf & Occasion) ou ajoutez l'abonnement Looby+ (3,49 €/mois) pour commencer.")
+            Text("Parcourez la Boutique (Neuf & Occasion) pour découvrir nos ouvrages et commencer vos achats.")
                 .font(.system(size: 13.5))
                 .foregroundStyle(LivriaPalette.inkMuted)
                 .multilineTextAlignment(.center)
@@ -73,36 +69,6 @@ public struct CartView: View {
             }
             Spacer()
         }
-    }
-
-    private var loobyPlusUpsellBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "crown.fill")
-                .font(.title2)
-                .foregroundStyle(LivriaPalette.gold)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Livraison 0 € immédiate avec Looby+ (3,49 €/mois)")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("Abonnement App Store sans engagement • 1 livre audio offert / mois")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.88))
-            }
-            Spacer()
-            Button {
-                dismiss()
-                store.selectedMainTab = 3
-            } label: {
-                Text("Découvrir")
-                    .font(.system(size: 12.5, weight: .black))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Capsule().fill(LivriaPalette.gold))
-                    .foregroundStyle(.black)
-            }
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LivriaPalette.loobyPlusGradient))
     }
 
     private func cartItemRow(item: LivriaCartItem) -> some View {
@@ -140,38 +106,26 @@ public struct CartView: View {
 
             Spacer()
 
-            if item.isLoobyPlusSubscription {
-                Button(role: .destructive) {
+            HStack(spacing: 8) {
+                Button {
                     Task {
-                        await store.updateCartItem(bookId: item.bookId, format: item.format, quantity: 0)
+                        await store.updateCartItem(bookId: item.bookId, format: item.format, quantity: item.quantity - 1)
                     }
                 } label: {
-                    Image(systemName: "trash.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.red)
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(LivriaPalette.primary)
                 }
-            } else {
-                HStack(spacing: 8) {
-                    Button {
-                        Task {
-                            await store.updateCartItem(bookId: item.bookId, format: item.format, quantity: item.quantity - 1)
-                        }
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(LivriaPalette.primary)
+                Text("\(item.quantity)")
+                    .font(.system(size: 14, weight: .bold))
+                Button {
+                    Task {
+                        await store.updateCartItem(bookId: item.bookId, format: item.format, quantity: item.quantity + 1)
                     }
-                    Text("\(item.quantity)")
-                        .font(.system(size: 14, weight: .bold))
-                    Button {
-                        Task {
-                            await store.updateCartItem(bookId: item.bookId, format: item.format, quantity: item.quantity + 1)
-                        }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(LivriaPalette.primary)
-                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(LivriaPalette.primary)
                 }
             }
         }

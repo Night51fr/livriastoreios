@@ -536,11 +536,6 @@ public struct BoutiqueView: View {
                                 Text(member.displayName)
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundStyle(LivriaPalette.ink)
-                                if member.isLivriaPlus {
-                                    Image(systemName: "crown.fill")
-                                        .font(.caption2)
-                                        .foregroundStyle(LivriaPalette.gold)
-                                }
                             }
                             if !member.bio.isEmpty {
                                 Text(member.bio)

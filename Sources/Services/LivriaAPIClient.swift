@@ -315,18 +315,6 @@ public final class LivriaAPIClient {
         return try await postRaw("/auth/delete-account", body: payload)
     }
 
-    /// Activation de l'abonnement Looby+ suite à un achat In-App StoreKit 2
-    public func activateLoobyPlusIap(userId: Int?, email: String?, cid: String?, productId: String, transactionId: String) async throws -> [String: Any] {
-        var payload: [String: Any] = [
-            "productId": productId,
-            "transactionId": transactionId
-        ]
-        if let userId { payload["userId"] = userId }
-        if let email { payload["email"] = email }
-        if let cid { payload["cid"] = cid }
-        return try await postRaw("/loobyplus/activate-iap", body: payload)
-    }
-
     // MARK: - Bootstrap, Boutique, Recherche ISBN & Membres
 
     public func fetchBootstrap(email: String?, userId: Int?) async throws -> LivriaBootstrapResponse {

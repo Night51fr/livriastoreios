@@ -83,7 +83,7 @@ public struct MainTabView: View {
                 Task {
                     await store.refreshPaymentSettings()
                 }
-                if !store.isAuthenticated && (newTab == 2 || newTab == 3) {
+                if !store.isAuthenticated && newTab == 2 {
                     store.isShowingAuthSheet = true
                 }
             }
@@ -225,15 +225,6 @@ public struct LivriaStoreCrossAppSSOPromptView: View {
                                 .font(.system(size: 17, weight: .black, design: .rounded))
                                 .foregroundStyle(LivriaPalette.ink)
                                 .lineLimit(1)
-
-                            if account.isLivriaPlus {
-                                Label("Looby+", systemImage: "crown.fill")
-                                    .font(.system(size: 10, weight: .heavy, design: .rounded))
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(LivriaPalette.goldSoft))
-                                    .foregroundStyle(LivriaPalette.gold)
-                            }
                         }
 
                         if !fullNameLine.isEmpty && fullNameLine.lowercased() != account.displayName.lowercased() {
@@ -592,12 +583,6 @@ public struct LivriaStoreAccountHubView: View {
                         Text(store.isAuthenticated ? (store.currentUser?.displayName ?? "Membre Livria") : "Bienvenue sur Livria")
                             .font(.system(size: 19, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
-
-                        if store.currentUser?.isLivriaPlus == true {
-                            Image(systemName: "crown.fill")
-                                .font(.caption)
-                                .foregroundStyle(LivriaPalette.gold)
-                        }
                     }
 
                     Text(store.isAuthenticated
@@ -718,7 +703,7 @@ public struct LivriaStoreAccountHubView: View {
                     Button {
                         store.selectedMainTab = 3
                     } label: {
-                        shortcutTile(title: "Club Looby+", subtitle: "Avantages", icon: "crown.fill", color: LivriaPalette.gold)
+                        shortcutTile(title: "Looby+", subtitle: "Bientôt sur iOS", icon: "crown.fill", color: LivriaPalette.gold)
                     }
                     .buttonStyle(.plain)
 
@@ -835,8 +820,8 @@ public struct LivriaStoreAccountHubView: View {
                         store.selectedMainTab = 3
                     } label: {
                         hubActionRow(
-                            title: "Abonnement Club Looby+ (3,49 €/mois)",
-                            subtitle: "Livraison 0 €, 1 livre audio offert par mois, 5% de cagnotte et partage familial",
+                            title: "Looby+",
+                            subtitle: "Looby+ sera disponible prochainement dans l'appli iOS",
                             icon: "crown.fill",
                             color: LivriaPalette.gold
                         )

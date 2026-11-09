@@ -432,15 +432,11 @@ public struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 5. Bannière Looby+ (3,49 €/mois)
+    // MARK: - 5. Bannière Looby+ (Bientôt disponible)
 
     private var loobyPlusPromoBanner: some View {
         Button {
-            if store.isAuthenticated {
-                store.selectedMainTab = 3
-            } else {
-                store.isShowingAuthSheet = true
-            }
+            store.selectedMainTab = 3
         } label: {
             HStack(spacing: 14) {
                 ZStack {
@@ -453,21 +449,12 @@ public struct HomeView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    if store.currentUser?.isLivriaPlus == true {
-                        Text("Club Looby+ Actif")
-                            .font(.system(size: 15.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("Livraison 0 €, Box Surprise, Partage Familial & 5% Cashback")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.88))
-                    } else {
-                        Text("Rejoignez le Club Looby+ à 3,49 €/mois")
-                            .font(.system(size: 15.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("Livraison UPS 0 € dès le 1er livre, 1 livre audio offert/mois & 5% de cagnotte")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.88))
-                    }
+                    Text("Looby+")
+                        .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("Looby+ sera disponible prochainement dans l'appli iOS")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.92))
                 }
                 Spacer()
                 Image(systemName: "chevron.right.circle.fill")

@@ -149,7 +149,7 @@ public struct VipleLiveAuthView: View {
             .background(Capsule().fill(Color.white.opacity(0.16)))
             .overlay(Capsule().stroke(Color.white.opacity(0.28), lineWidth: 1))
 
-            Text("Connectez-vous avec votre compte Viple Live ID pour synchroniser vos commandes Neuf & Occasion, vos offres de Troc, Looby+, Viple Delivery et l'Assistance Viple.")
+            Text("Connectez-vous avec votre compte Viple Live ID pour synchroniser vos commandes Neuf & Occasion, vos offres de Troc, Viple Delivery et l'Assistance Viple.")
                 .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.88))
                 .multilineTextAlignment(.center)

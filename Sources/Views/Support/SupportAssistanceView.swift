@@ -14,7 +14,6 @@ public struct SupportAssistanceView: View {
 
     private let categories = [
         "Commande & Livraison",
-        "Abonnement Looby+",
         "Mon Compte",
         "Boutique & Catalogue",
         "Troc & Points Relais",
@@ -52,7 +51,7 @@ public struct SupportAssistanceView: View {
                             .foregroundStyle(LivriaPalette.primary)
                         Text("Aucune demande en cours")
                             .font(.system(size: 16, weight: .bold))
-                        Text("Besoin d'aide concernant une commande, la livraison d'un colis ou votre abonnement Looby+ ? Envoyez-nous un message et notre équipe vous répondra rapidement.")
+                        Text("Besoin d'aide concernant une commande, la livraison d'un colis ou un échange ? Envoyez-nous un message et notre équipe vous répondra rapidement.")
                             .font(.system(size: 13))
                             .foregroundStyle(LivriaPalette.inkMuted)
                             .multilineTextAlignment(.center)
@@ -96,7 +95,7 @@ public struct SupportAssistanceView: View {
                     Text("Service Client à votre écoute")
                         .font(.system(size: 15.5, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("Une question sur un livre, un colis ou votre abonnement ? Nous sommes là pour vous aider.")
+                    Text("Une question sur un livre, un colis ou votre compte ? Nous sommes là pour vous aider.")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.88))
                 }

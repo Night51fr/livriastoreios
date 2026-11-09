@@ -913,7 +913,7 @@ public struct CheckoutView: View {
             }
 
             if (store.currentUser?.cashbackBalance ?? 0) > 0 {
-                Toggle(String(format: "💶 Utiliser ma cagnotte Looby+ (%.2f €)", store.currentUser?.cashbackBalance ?? 0), isOn: $useCashback)
+                Toggle(String(format: "💶 Utiliser ma cagnotte fidélité (%.2f €)", store.currentUser?.cashbackBalance ?? 0), isOn: $useCashback)
                     .font(.system(size: 13.5, weight: .semibold))
                     .tint(LivriaPalette.gold)
             }

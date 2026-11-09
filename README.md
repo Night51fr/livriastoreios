@@ -29,6 +29,6 @@ Application mobile officielle **Livria Store** (`CFBundleDisplayName = "Livria S
    - **Sélecteur d'état sur la fiche livre** : Permet de choisir entre l'exemplaire **✨ Neuf** et l'exemplaire **♻️ Occasion** (`Occasion - Comme neuf`, `Occasion - Très bon état`, `Occasion - Bon état`, `Occasion - État correct`) au prix indiqué de chacun, synchronisé avec Viple Wingman.
    - **Bande-son d'ambiance interactive** (`LivriaAmbientSoundPlayer`) et **Résumé IA garanti sans spoiler**.
 3. **Troc de Livres (`TradeView.swift`)** : Onglet principal dédié au troc (Offres ouvertes, Mes offres, Mes demandes) avec **auto-remplissage par ISBN en 1 clic** (Google Books + OpenLibrary + Catalogue Livria).
-4. **Looby+ (`LoobyPlusView.swift`)** : Souscription à **3,50 €/mois** et Dashboard Abonné (Livraison 0 €, Crédits Audio, Cashback 5%, Box Surprise, Partage Familial 4 comptes).
+4. **Looby+ (`LoobyPlusView.swift`)** : Indique que « Looby+ sera disponible prochainement dans l'appli iOS ».
 5. **Panier (`CartView.swift`), Checkout (`CheckoutView.swift`) & Commandes (`OrdersView.swift`)** : Distinction claire Neuf / Occasion, paiement express **Apple Pay / Google Pay via API PayPal**, Checkout sans compte + création de compte 1-clic post-commande, bordereaux **UPS (`1Z...`)** et suivi **Viple Delivery**.
 6. **Points Relais Communautaires & UPS Access Point™ (`RelayPointsView.swift`)**, **Jeux Littéraires XP (`GamesHubView.swift`)**, **Assistance VipleAPI (`SupportAssistanceView.swift`)** et **Mon Profil Viple Live ID (`ProfileView.swift`)**.
