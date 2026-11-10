@@ -709,6 +709,11 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.homeData = boot.home
             self.books = boot.books
             self.genres = boot.genres
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { g in
+                    let lower = g.lowercased()
+                    return !g.isEmpty && lower != "inconnu" && lower != "null" && lower != "undefined"
+                }
             if let pendingId = self.pendingDeepLinkedBookId,
                let targetBook = boot.books.first(where: { $0.id == pendingId }) {
                 self.pendingDeepLinkedBookId = nil

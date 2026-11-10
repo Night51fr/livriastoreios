@@ -9,16 +9,33 @@ public struct BoutiqueView: View {
     @EnvironmentObject private var store: LivriaStoreViewModel
 
     public enum SearchScope: String, CaseIterable {
-        case books = "📚 Livres"
-        case members = "👥 Membres"
+        case books = "Livres"
+        case members = "Membres"
+
+        public var iconName: String {
+            switch self {
+            case .books: return "book"
+            case .members: return "person.2"
+            }
+        }
     }
 
     public enum ConditionFilter: String, CaseIterable {
         case all = "Tous états"
-        case favoritesOnly = "❤️ Favoris"
-        case newOnly = "✨ Neuf"
-        case usedOnly = "♻️ Occasion"
-        case digitalOnly = "🎧 Audio / E-Book"
+        case favoritesOnly = "Favoris"
+        case newOnly = "Neuf"
+        case usedOnly = "Occasion"
+        case digitalOnly = "Audio / E-Book"
+
+        public var iconName: String? {
+            switch self {
+            case .all: return nil
+            case .favoritesOnly: return "heart"
+            case .newOnly: return "tag"
+            case .usedOnly: return "arrow.triangle.2.circlepath"
+            case .digitalOnly: return "headphones"
+            }
+        }
     }
 
     public enum SortOption: String, CaseIterable {
@@ -108,7 +125,9 @@ public struct BoutiqueView: View {
                                 boutiqueBookCard(book: book)
                             }
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 100)
                     }
                 } else {
                     memberSearchResultsView
@@ -179,17 +198,48 @@ public struct BoutiqueView: View {
         }
     }
 
-    // MARK: - En-tête de Recherche Double (📚 Livres / 👥 Membres) + Filtres Neuf/Occasion
+    // MARK: - En-tête de Recherche Double (Livres / Membres) + Filtres Neuf/Occasion
 
     private var searchAndFilterHeader: some View {
         VStack(spacing: 10) {
-            // Sélecteur Livres vs Membres
-            Picker("Mode de recherche", selection: $searchScope) {
+            // Sélecteur Livres vs Membres avec icônes vectorielles monochromes
+            HStack(spacing: 6) {
                 ForEach(SearchScope.allCases, id: \.self) { scope in
-                    Text(scope.rawValue).tag(scope)
+                    let isSelected = searchScope == scope
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                            searchScope = scope
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: scope.iconName)
+                                .symbolRenderingMode(.monochrome)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(scope.rawValue)
+                                .font(.system(size: 13, weight: isSelected ? .bold : .semibold, design: .rounded))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(isSelected ? LivriaPalette.cardPaper : Color.clear)
+                                .shadow(color: isSelected ? Color.black.opacity(0.08) : .clear, radius: 3, x: 0, y: 1)
+                        )
+                        .foregroundStyle(isSelected ? LivriaPalette.ink : LivriaPalette.inkMuted)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .pickerStyle(.segmented)
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(LivriaPalette.background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(LivriaPalette.border, lineWidth: 1)
+            )
 
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
@@ -280,7 +330,7 @@ public struct BoutiqueView: View {
             }
 
             if searchScope == .books {
-                // Filtre d'état Neuf / Occasion / Favoris ❤️ / Audio & E-Book
+                // Filtre d'état Neuf / Occasion / Favoris / Audio & E-Book avec icônes vectorielles monochromes
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(ConditionFilter.allCases, id: \.self) { cond in
@@ -288,8 +338,14 @@ public struct BoutiqueView: View {
                             Button {
                                 conditionFilter = cond
                             } label: {
-                                HStack(spacing: 4) {
+                                HStack(spacing: 5) {
+                                    if let iconName = cond.iconName {
+                                        Image(systemName: iconName)
+                                            .symbolRenderingMode(.monochrome)
+                                            .font(.system(size: 11.5, weight: .semibold))
+                                    }
                                     Text(cond.rawValue)
+                                        .lineLimit(1)
                                     if cond == .favoritesOnly && !store.favoriteBookIds.isEmpty {
                                         Text("(\(store.favoriteBookIds.count))")
                                     }
@@ -387,7 +443,7 @@ public struct BoutiqueView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 if book.hasNewStock {
-                                    Text("✨ Neuf")
+                                    Text("Neuf")
                                         .font(.system(size: 9.5, weight: .heavy))
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 8)
@@ -395,12 +451,18 @@ public struct BoutiqueView: View {
                                         .background(Capsule().fill(LivriaPalette.mint))
                                 }
                                 if book.hasUsedStock {
-                                    Text("♻️ \(book.usedConditionLabel)")
-                                        .font(.system(size: 9.5, weight: .heavy))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(Capsule().fill(LivriaPalette.usedAmber))
+                                    HStack(spacing: 3.5) {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .symbolRenderingMode(.monochrome)
+                                            .font(.system(size: 8.5, weight: .bold))
+                                        Text(book.usedConditionLabel)
+                                            .font(.system(size: 9.5, weight: .heavy))
+                                            .lineLimit(1)
+                                    }
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(LivriaPalette.usedAmber))
                                 }
                             }
                             Spacer()
@@ -418,12 +480,15 @@ public struct BoutiqueView: View {
                         .padding(6)
                     }
 
-                    Text(book.displayGenre)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(LivriaPalette.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2.5)
-                        .background(Capsule().fill(LivriaPalette.primarySoft))
+                    if !book.displayGenre.isEmpty && book.displayGenre.lowercased() != "inconnu" {
+                        Text(book.displayGenre)
+                            .font(.system(size: 10, weight: .bold))
+                            .lineLimit(1)
+                            .foregroundStyle(LivriaPalette.primary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2.5)
+                            .background(Capsule().fill(LivriaPalette.primarySoft))
+                    }
 
                     Text(book.title)
                         .font(.system(size: 14, weight: .bold))
@@ -466,21 +531,26 @@ public struct BoutiqueView: View {
             HStack {
                 if book.hasNewStock && book.hasUsedStock {
                     Menu {
-                        Button("✨ Ajouter Neuf (\(String(format: "%.2f €", book.price)))") {
+                        Button {
                             Task {
                                 await store.addToCart(bookId: book.id, format: "Broché", quantity: 1)
                             }
+                        } label: {
+                            Label("Ajouter Neuf (\(String(format: "%.2f €", book.price)))", systemImage: "tag")
                         }
-                        Button("♻️ Ajouter \(book.usedConditionLabel) (\(String(format: "%.2f €", book.effectiveUsedPrice)))") {
+                        Button {
                             Task {
                                 await store.addToCart(bookId: book.id, format: book.cartFormatForUsed, quantity: 1)
                             }
+                        } label: {
+                            Label("Ajouter \(book.usedConditionLabel) (\(String(format: "%.2f €", book.effectiveUsedPrice)))", systemImage: "arrow.triangle.2.circlepath")
                         }
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "cart.fill")
                                 .symbolRenderingMode(.monochrome)
                             Text("Choisir l'état")
+                                .lineLimit(1)
                         }
                         .font(.system(size: 11.5, weight: .bold))
                         .frame(maxWidth: .infinity)
@@ -499,6 +569,7 @@ public struct BoutiqueView: View {
                             Image(systemName: "cart.fill")
                                 .symbolRenderingMode(.monochrome)
                             Text(book.hasNewStock ? "Ajouter (Neuf)" : "Ajouter (Occasion)")
+                                .lineLimit(1)
                         }
                         .font(.system(size: 11.5, weight: .bold))
                         .frame(maxWidth: .infinity)
@@ -571,7 +642,9 @@ public struct BoutiqueView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 100)
         }
         .task {
             if store.searchedMembers.isEmpty {

@@ -39,9 +39,9 @@ public struct HomeView: View {
 
                     if !store.favoriteBooks.isEmpty {
                         bookCarouselSection(
-                            title: "Mes Coups de Cœur ❤️",
+                            title: "Mes Coups de Cœur",
                             subtitle: "Votre liste d'envies et ouvrages favoris sauvegardés",
-                            icon: "heart.fill",
+                            icon: "heart",
                             books: store.favoriteBooks
                         )
                     }
@@ -82,14 +82,15 @@ public struct HomeView: View {
                     bookCarouselSection(
                         title: "Petits Prix & Pépites",
                         subtitle: "De belles lectures à prix tout doux",
-                        icon: "tag.fill",
+                        icon: "tag",
                         books: store.homeData?.deals ?? Array(store.books.sorted { $0.price < $1.price }.prefix(8))
                     )
 
                     tradeCommunityBanner
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 100)
             }
             .livriaThemedBackground(store.currentThemeId)
             .navigationBarTitleDisplayMode(.inline)
@@ -160,7 +161,7 @@ public struct HomeView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Bonjour, \(store.currentUser?.displayName ?? "Lecteur") ✨")
+                    Text("Bonjour, \(store.currentUser?.displayName ?? "Lecteur")")
                         .font(.system(size: 20, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
 
@@ -339,8 +340,10 @@ public struct HomeView: View {
                             selectedBook = book
                         } label: {
                             Text("Découvrir")
-                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
-                                .padding(.horizontal, 14)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(Capsule().fill(LivriaPalette.primarySoft))
                                 .foregroundStyle(LivriaPalette.primaryDeep)
@@ -353,12 +356,20 @@ public struct HomeView: View {
                                 await store.addToCart(bookId: book.id, format: fmt, quantity: 1)
                             }
                         } label: {
-                            Label("Ajouter", systemImage: "cart.badge.plus")
-                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(Capsule().fill(LivriaPalette.primary))
-                                .foregroundStyle(.white)
+                            HStack(spacing: 5) {
+                                Image(systemName: "cart.badge.plus")
+                                    .symbolRenderingMode(.monochrome)
+                                    .font(.system(size: 11.5, weight: .bold))
+                                Text("Ajouter")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                            }
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(LivriaPalette.primary))
+                            .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
                     }
@@ -563,20 +574,26 @@ public struct HomeView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 3) {
                                 if book.hasNewStock {
-                                    Text("✨ Neuf")
+                                    Text("Neuf")
                                         .font(.system(size: 9, weight: .heavy))
-                                        .padding(.horizontal, 6)
+                                        .padding(.horizontal, 6.5)
                                         .padding(.vertical, 2.5)
                                         .background(Capsule().fill(LivriaPalette.mint))
                                         .foregroundStyle(.white)
                                 }
                                 if book.hasUsedStock {
-                                    Text("♻️ \(book.usedConditionLabel)")
-                                        .font(.system(size: 8.5, weight: .heavy))
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2.5)
-                                        .background(Capsule().fill(LivriaPalette.usedAmber))
-                                        .foregroundStyle(.white)
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .symbolRenderingMode(.monochrome)
+                                            .font(.system(size: 7.5, weight: .bold))
+                                        Text(book.usedConditionLabel)
+                                            .font(.system(size: 8.5, weight: .heavy))
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(Capsule().fill(LivriaPalette.usedAmber))
+                                    .foregroundStyle(.white)
                                 }
                             }
                             Spacer()
@@ -594,12 +611,15 @@ public struct HomeView: View {
                         .padding(6)
                     }
 
-                    Text(book.displayGenre)
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundStyle(LivriaPalette.primary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(LivriaPalette.primarySoft))
+                    if !book.displayGenre.isEmpty && book.displayGenre.lowercased() != "inconnu" {
+                        Text(book.displayGenre)
+                            .font(.system(size: 9.5, weight: .bold))
+                            .lineLimit(1)
+                            .foregroundStyle(LivriaPalette.primary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(LivriaPalette.primarySoft))
+                    }
 
                     Text(book.title)
                         .font(.system(size: 13, weight: .bold))

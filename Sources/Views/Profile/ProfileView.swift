@@ -54,7 +54,9 @@ public struct ProfileView: View {
                         deleteAccountCard
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 100)
             }
             .livriaThemedBackground(store.currentThemeId)
             .navigationTitle("Mon Profil Livria")

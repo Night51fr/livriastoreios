@@ -61,7 +61,9 @@ public struct BookDetailView: View {
                 }
                 reviewsSectionCard
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 100)
         }
         .livriaThemedBackground(store.currentThemeId)
         .navigationTitle(book.title)
@@ -182,9 +184,14 @@ public struct BookDetailView: View {
                         )
 
                     if selectedFormat == "Broché" {
-                        Text(selectedConditionIsUsed ? "♻️ Exemplaire \(book.usedConditionLabel)" : "✨ Exemplaire Neuf éditeur")
-                            .font(.system(size: 11.5, weight: .bold))
-                            .foregroundStyle(selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.mint)
+                        HStack(spacing: 5) {
+                            Image(systemName: selectedConditionIsUsed ? "arrow.triangle.2.circlepath" : "tag")
+                                .symbolRenderingMode(.monochrome)
+                                .font(.system(size: 11, weight: .bold))
+                            Text(selectedConditionIsUsed ? "Exemplaire \(book.usedConditionLabel)" : "Exemplaire Neuf éditeur")
+                                .font(.system(size: 11.5, weight: .bold))
+                        }
+                        .foregroundStyle(selectedConditionIsUsed ? LivriaPalette.usedAmber : LivriaPalette.mint)
                     }
 
                     if currentBook.hasLongerDelivery12Days {
@@ -266,7 +273,7 @@ public struct BookDetailView: View {
                     if currentBook.hasNewStock {
                         conditionChoiceCard(
                             isUsed: false,
-                            badge: "✨ Neuf",
+                            badge: "Neuf",
                             subtitle: "Exemplaire neuf (\(max(currentBook.stock, 1)) en stock)",
                             price: currentBook.price,
                             accent: LivriaPalette.primary
@@ -276,7 +283,7 @@ public struct BookDetailView: View {
                     if currentBook.hasUsedStock {
                         conditionChoiceCard(
                             isUsed: true,
-                            badge: "♻️ \(currentBook.usedConditionLabel)",
+                            badge: currentBook.usedConditionLabel,
                             subtitle: "Exemplaire contrôlé et garanti (\(currentBook.usedStock ?? 1) en stock)",
                             price: currentBook.effectiveUsedPrice,
                             accent: LivriaPalette.usedAmber

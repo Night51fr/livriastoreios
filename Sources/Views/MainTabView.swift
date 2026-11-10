@@ -548,7 +548,9 @@ public struct LivriaStoreAccountHubView: View {
 
                     helpAndAccountSection
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 100)
             }
             .livriaThemedBackground(store.currentThemeId)
             .navigationTitle(store.isAuthenticated ? "Mon Profil" : "Menu Invité")

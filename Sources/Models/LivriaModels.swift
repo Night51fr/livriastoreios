@@ -332,10 +332,18 @@ public struct LivriaBook: Codable, Identifiable, Equatable, Hashable, Sendable {
         LivriaURLResolver.resolve(coverUrl)
     }
 
+    public var hasValidGenre: Bool {
+        let trimmed = genre.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let lower = trimmed.lowercased()
+        return lower != "inconnu" && lower != "null" && lower != "undefined" && lower != "n/a"
+    }
+
     public var displayGenre: String {
         let trimmed = genre.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.count > 11 {
-            return "Inconnu"
+        let lower = trimmed.lowercased()
+        if trimmed.isEmpty || lower == "inconnu" || lower == "null" || lower == "undefined" || lower == "n/a" {
+            return "Roman / Livre"
         }
         return trimmed
     }
