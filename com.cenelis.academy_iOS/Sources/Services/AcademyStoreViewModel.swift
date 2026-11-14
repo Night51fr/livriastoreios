@@ -162,6 +162,8 @@ public final class AcademyStoreViewModel: ObservableObject {
     private var cloudPushTask: Task<Void, Never>?
     private var pinPollingTask: Task<Void, Never>?
     private var hasAutoOpenedPinInCurrentGateEntry: Bool = false
+    private var isProcessingIncomingHandoff: Bool = false
+    private var pendingDeepLinkItems: [String: String]? = nil
 
     public var requiresCGUAcceptance: Bool {
         guard learner.authenticated, !learner.email.isEmpty else { return true }
@@ -406,6 +408,17 @@ public final class AcademyStoreViewModel: ObservableObject {
         )
         AcademyHaptics.success()
 
+        if isPinVerifiedForCurrentLaunch {
+            if catalog.courses.isEmpty {
+                await refreshCatalogAndSync(silent: false)
+            }
+            if let deferred = pendingDeepLinkItems {
+                pendingDeepLinkItems = nil
+                applyDeepLinkNavigation(items: deferred)
+            }
+            return
+        }
+
         // Dès l'acceptation des CGU, déclencher automatiquement l'ouverture du code PIN Cenelis Connect dans Safari In-App
         hasAutoOpenedPinInCurrentGateEntry = false
         triggerAutoPinIfNeeded()
@@ -414,6 +427,7 @@ public final class AcademyStoreViewModel: ObservableObject {
     // MARK: - Code PIN Cenelis Connect via Safari In-App (À CHAQUE LANCEMENT DE L'APPLICATION)
 
     public func triggerAutoPinIfNeeded() {
+        guard !isProcessingIncomingHandoff else { return }
         guard activeSecurityGate == .pinVerificationRequired else { return }
         guard !hasAutoOpenedPinInCurrentGateEntry else { return }
         hasAutoOpenedPinInCurrentGateEntry = true
@@ -479,6 +493,10 @@ public final class AcademyStoreViewModel: ObservableObject {
         }
 
         await refreshCatalogAndSync(silent: false)
+        if let deferred = pendingDeepLinkItems {
+            pendingDeepLinkItems = nil
+            applyDeepLinkNavigation(items: deferred)
+        }
     }
 
     // MARK: - Authentification Viple Live ID & SSO Mobile
@@ -529,6 +547,87 @@ public final class AcademyStoreViewModel: ObservableObject {
         }
         let host = (url.host ?? "").lowercased()
         let items = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+
+        // 0. Inter-App SSO & Bypass silencieux du PIN depuis « Cenelis Workspace / Admin Hub »
+        if let bypassToken = items["pin_bypass_token"], !bypassToken.isEmpty {
+            isProcessingIncomingHandoff = true
+            pinPollingTask?.cancel()
+            activePinSafariItem = nil
+            pinGateMessage = nil
+            defer { isProcessingIncomingHandoff = false }
+
+            do {
+                let res = try await AcademyAPIClient.shared.redeemPinBypassToken(bypassToken)
+                if let token = res.token, !token.isEmpty {
+                    self.mobileToken = token
+                    if let profile = res.learner {
+                        self.learner = profile
+                        persistLearnerIdentity(profile, token: token)
+                    }
+                }
+                if let srvCgu = res.cgu {
+                    self.cguDocument = srvCgu
+                }
+                if let srvAcc = res.cguAcceptance {
+                    self.serverCguAcceptance = srvAcc
+                    if srvAcc.accepted, !self.learner.email.isEmpty {
+                        AcademyAPIClient.shared.saveLocalCGUAcceptance(
+                            forEmail: self.learner.email,
+                            version: srvAcc.acceptedVersion,
+                            hash: srvAcc.acceptedHash,
+                            acceptedAt: srvAcc.acceptedAtUtc
+                        )
+                    }
+                }
+                if let cloudProg = res.progress, self.learner.hasCenelisAccess {
+                    self.progress = Self.mergeProgress(local: self.progress, cloud: cloudProg)
+                    AcademyAPIClient.shared.saveLocalProgress(self.progress)
+                }
+
+                self.shouldForceFreshSSOLogin = false
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
+                    self.isInitialBooting = false
+                    self.isPinVerifiedForCurrentLaunch = true
+                }
+                AcademyHaptics.success()
+
+                if !requiresCGUAcceptance {
+                    if catalog.courses.isEmpty {
+                        await refreshCatalogAndSync(silent: false)
+                    } else {
+                        Task { await refreshCatalogAndSync(silent: true) }
+                    }
+                    applyDeepLinkNavigation(items: items)
+                } else {
+                    pendingDeepLinkItems = items
+                }
+                return
+            } catch AcademyAPIError.forbiddenCenelisPermission(let srvProfile) {
+                if let srvProfile { self.learner = srvProfile }
+                self.isInitialBooting = false
+                return
+            } catch {
+                // Si le jeton à usage unique est expiré, basculer proprement sur la navigation différée après PIN normal
+                pendingDeepLinkItems = items
+                if !isInitialBooting {
+                    triggerAutoPinIfNeeded()
+                }
+                return
+            }
+        }
+
+        // Navigation directe vers un cours / une section lorsque la session est déjà déverrouillée
+        if host == "handoff" || host == "open" || host == "course" {
+            if activeSecurityGate == .unlocked {
+                if catalog.courses.isEmpty {
+                    await refreshCatalogAndSync(silent: false)
+                }
+                applyDeepLinkNavigation(items: items)
+            } else {
+                pendingDeepLinkItems = items
+            }
+            return
+        }
 
         // 1. Retour de validation du code PIN Cenelis Connect (pont de secours cenelisacademy://pin-verified)
         if host == "pin-verified" {
@@ -685,6 +784,58 @@ public final class AcademyStoreViewModel: ObservableObject {
     public func closeCourseReader() {
         AcademyHaptics.light()
         activeCourseId = nil
+    }
+
+    public func applyDeepLinkNavigation(items: [String: String]) {
+        isShowingSearch = false
+        activeBubble = nil
+        activeDeepDive = nil
+
+        if let courseId = items["course"], !courseId.isEmpty,
+           let course = catalog.courses.first(where: { $0.id.caseInsensitiveCompare(courseId) == .orderedSame }) {
+            var resolvedStep: Int? = nil
+
+            if let section = items["section"], !section.isEmpty {
+                if let partIdx = course.parts.firstIndex(where: { $0.id.caseInsensitiveCompare(section) == .orderedSame }) {
+                    resolvedStep = partIdx
+                } else if let numericStep = Int(section) {
+                    resolvedStep = numericStep
+                }
+            }
+            if resolvedStep == nil, let stepRaw = items["step"], let sIdx = Int(stepRaw) {
+                resolvedStep = sIdx
+            }
+            if resolvedStep == nil, let chapRaw = items["chapter"], let chNum = Int(chapRaw),
+               let chIdx = course.parts.firstIndex(where: { $0.chapter == chNum }) {
+                resolvedStep = chIdx
+            }
+
+            activeTab = .courses
+            openCourse(course.id, stepIndex: resolvedStep ?? 0)
+            return
+        }
+
+        if let diveId = items["deep_dive"], !diveId.isEmpty,
+           let dive = catalog.deepDives.first(where: { $0.id.caseInsensitiveCompare(diveId) == .orderedSame }) {
+            activeCourseId = nil
+            activeTab = .home
+            activeDeepDive = dive
+            return
+        }
+
+        if let bubKey = items["bubble"], !bubKey.isEmpty,
+           let bub = catalog.bubbles[bubKey] {
+            activeCourseId = nil
+            activeBubble = bub
+            return
+        }
+
+        if let resTab = items["resource_tab"], !resTab.isEmpty {
+            activeCourseId = nil
+            preselectedResourceTabId = resTab
+            activeTab = .resources
+            return
+        }
     }
 
     public func setStepIndex(_ newIndex: Int, for course: AcademyCourse) {

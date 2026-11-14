@@ -16,8 +16,10 @@ public struct AcademyVersionResponse: Codable, Sendable {
 
 public struct AcademyAuthResponse: Codable, Sendable {
     public let ok: Bool
+    public let pinBypassed: Bool?
     public let token: String?
     public let error: String?
+    public let errorCode: String?
     public let learner: AcademyLearnerProfile?
     public let cgu: AcademyCGUDocument?
     public let cguAcceptance: AcademyCGUAcceptanceStatus?
@@ -444,6 +446,42 @@ public final class AcademyAPIClient {
         let decoded = try JSONDecoder().decode(AcademyAuthResponse.self, from: data)
         if !decoded.ok {
             throw AcademyAPIError.serverMessage(decoded.error ?? "Identifiants Viple Live ID incorrects.")
+        }
+        return decoded
+    }
+
+    public func redeemPinBypassToken(_ pinBypassToken: String) async throws -> AcademyAuthResponse {
+        let trimmed = pinBypassToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw AcademyAPIError.unauthorized }
+
+        let url = baseURL.appendingPathComponent("api/mobile/v1/auth/redeem-pin-bypass")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["pinBypassToken": trimmed])
+
+        let (data, resp): (Data, URLResponse)
+        do {
+            (data, resp) = try await session.data(for: req)
+        } catch {
+            throw AcademyAPIError.networkUnavailable
+        }
+
+        guard let http = resp as? HTTPURLResponse else {
+            throw AcademyAPIError.invalidResponse
+        }
+        if http.statusCode == 401 {
+            throw AcademyAPIError.unauthorized
+        }
+        if http.statusCode == 403 {
+            let env = try? JSONDecoder().decode(AcademyForbiddenEnvelope.self, from: data)
+            throw AcademyAPIError.forbiddenCenelisPermission(env?.learner)
+        }
+        let decoded = try JSONDecoder().decode(AcademyAuthResponse.self, from: data)
+        if !decoded.ok {
+            throw AcademyAPIError.serverMessage(decoded.error ?? "Jeton de transfert Cenelis Workspace invalide ou expiré.")
         }
         return decoded
     }
