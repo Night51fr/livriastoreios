@@ -54,16 +54,13 @@ public struct HomeHubView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        if vm.learner.authenticated {
-                            vm.activeTab = .passport
-                        } else {
-                            vm.isShowingAuthSheet = true
-                        }
+                        AcademyHaptics.selection()
+                        vm.activeTab = .passport
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: vm.learner.authenticated ? "checkmark.shield.fill" : "person.crop.circle.badge.plus")
+                            Image(systemName: "checkmark.shield.fill")
                                 .foregroundStyle(AcademyPalette.pine)
-                            Text(vm.learner.authenticated ? "Synchronisé" : "Connexion")
+                            Text(vm.learner.isExternalCenelis ? "Externe Cenelis" : "Interne Cenelis")
                                 .font(.system(size: 12.5, weight: .bold, design: .rounded))
                                 .foregroundStyle(AcademyPalette.pine)
                         }

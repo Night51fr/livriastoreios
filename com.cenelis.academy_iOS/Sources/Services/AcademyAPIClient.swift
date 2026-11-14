@@ -10,6 +10,8 @@ import UIKit
 public struct AcademyVersionResponse: Codable, Sendable {
     public let ok: Bool
     public let contentVersion: String
+    public let cguVersion: String?
+    public let cguHash: String?
 }
 
 public struct AcademyAuthResponse: Codable, Sendable {
@@ -17,6 +19,8 @@ public struct AcademyAuthResponse: Codable, Sendable {
     public let token: String?
     public let error: String?
     public let learner: AcademyLearnerProfile?
+    public let cgu: AcademyCGUDocument?
+    public let cguAcceptance: AcademyCGUAcceptanceStatus?
     public let progress: AcademyUserProgress?
 }
 
@@ -27,8 +31,68 @@ public struct AcademyProgressEnvelope: Codable, Sendable {
     public let data: AcademyUserProgress?
 }
 
+public struct AcademyMeResponse: Codable, Sendable {
+    public let ok: Bool
+    public let authenticated: Bool
+    public let email: String
+    public let displayName: String
+    public let cid: String
+    public let groups: [String]
+    public let hasCenelisAccess: Bool
+    public let permissionScope: String
+    public let rbacStatus: String
+    public let cgu: AcademyCGUDocument?
+    public let cguAcceptance: AcademyCGUAcceptanceStatus?
+
+    public var learnerProfile: AcademyLearnerProfile {
+        AcademyLearnerProfile(
+            authenticated: authenticated,
+            email: email,
+            displayName: displayName,
+            cid: cid,
+            groups: groups,
+            hasCenelisAccess: hasCenelisAccess,
+            permissionScope: permissionScope,
+            rbacStatus: rbacStatus
+        )
+    }
+}
+
+public struct AcademyCGUResponse: Codable, Sendable {
+    public let ok: Bool
+    public let cgu: AcademyCGUDocument
+    public let acceptance: AcademyCGUAcceptanceStatus?
+}
+
+public struct AcademyCGUAcceptResponse: Codable, Sendable {
+    public let ok: Bool
+    public let acceptedVersion: String?
+    public let acceptedHash: String?
+    public let acceptedAtUtc: String?
+    public let error: String?
+    public let errorCode: String?
+}
+
+public struct AcademyPinStatusResponse: Codable, Sendable {
+    public let ok: Bool
+    public let verified: Bool
+    public let expired: Bool?
+    public let nonce: String?
+    public let proof: String?
+    public let verifiedAtUtc: String?
+}
+
+private struct AcademyForbiddenEnvelope: Codable, Sendable {
+    let ok: Bool?
+    let errorCode: String?
+    let message: String?
+    let learner: AcademyLearnerProfile?
+}
+
 public enum AcademyAPIError: LocalizedError, Sendable {
     case invalidResponse
+    case unauthorized
+    case forbiddenCenelisPermission(AcademyLearnerProfile?)
     case serverMessage(String)
     case networkUnavailable
 
@@ -36,10 +100,14 @@ public enum AcademyAPIError: LocalizedError, Sendable {
         switch self {
         case .invalidResponse:
             return "Réponse serveur Cenelis Academy inattendue."
+        case .unauthorized:
+            return "Session expirée. Veuillez vous reconnecter avec votre compte Cenelis / Viple Live ID."
+        case .forbiddenCenelisPermission:
+            return "Votre compte ne dispose d'aucune habilitation interne ou externe Cenelis active."
         case .serverMessage(let msg):
             return msg
         case .networkUnavailable:
-            return "Connexion réseau indisponible. Mode hors-ligne activé sur le cache local."
+            return "Connexion réseau indisponible. Vérifiez votre accès Internet."
         }
     }
 }
@@ -86,6 +154,47 @@ public final class AcademyAPIClient {
 
     public func ssoStartURL() -> URL {
         baseURL.appendingPathComponent("api/mobile/v1/auth/sso-start")
+    }
+
+    public func buildPinLaunchURL(token: String, nonce: String) -> URL? {
+        guard !token.isEmpty, !nonce.isEmpty else { return nil }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("api/mobile/v1/auth/pin-start"), resolvingAgainstBaseURL: false)
+        comps?.queryItems = [
+            URLQueryItem(name: "token", value: token),
+            URLQueryItem(name: "nonce", value: nonce)
+        ]
+        return comps?.url
+    }
+
+    // MARK: - Persistance Locale d'Acceptation des CGU (Premier Lancement + Détection de Modification)
+
+    private func localCGUKey(forEmail email: String) -> String {
+        let norm = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let digest = SHA256.hash(data: Data(norm.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined().prefix(24)
+        return "ca.cgu.accepted.\(hex)"
+    }
+
+    public func loadLocalCGUAcceptance(forEmail email: String) -> (version: String, hash: String, acceptedAt: String)? {
+        let norm = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !norm.isEmpty,
+              let dict = UserDefaults.standard.dictionary(forKey: localCGUKey(forEmail: norm)) as? [String: String],
+              let ver = dict["version"], !ver.isEmpty,
+              let h = dict["hash"], !h.isEmpty else {
+            return nil
+        }
+        return (ver, h, dict["acceptedAt"] ?? "")
+    }
+
+    public func saveLocalCGUAcceptance(forEmail email: String, version: String, hash: String, acceptedAt: String) {
+        let norm = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !norm.isEmpty else { return }
+        let dict: [String: String] = [
+            "version": version,
+            "hash": hash,
+            "acceptedAt": acceptedAt
+        ]
+        UserDefaults.standard.set(dict, forKey: localCGUKey(forEmail: norm))
     }
 
     public func resolveAssetURL(_ rawPath: String?) -> URL? {
@@ -184,7 +293,17 @@ public final class AcademyAPIClient {
             throw AcademyAPIError.networkUnavailable
         }
 
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = resp as? HTTPURLResponse else {
+            throw AcademyAPIError.invalidResponse
+        }
+        if http.statusCode == 401 {
+            throw AcademyAPIError.unauthorized
+        }
+        if http.statusCode == 403 {
+            let env = try? JSONDecoder().decode(AcademyForbiddenEnvelope.self, from: data)
+            throw AcademyAPIError.forbiddenCenelisPermission(env?.learner)
+        }
+        guard (200..<300).contains(http.statusCode) else {
             throw AcademyAPIError.invalidResponse
         }
 
@@ -198,6 +317,113 @@ public final class AcademyAPIClient {
         decoded.bubbles = hydratedBubbles
 
         saveCachedBootstrapData(data)
+        return decoded
+    }
+
+    public func fetchMe(token: String) async throws -> AcademyMeResponse {
+        guard !token.isEmpty else { throw AcademyAPIError.unauthorized }
+        let url = baseURL.appendingPathComponent("api/mobile/v1/me")
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, resp): (Data, URLResponse)
+        do {
+            (data, resp) = try await session.data(for: req)
+        } catch {
+            throw AcademyAPIError.networkUnavailable
+        }
+
+        guard let http = resp as? HTTPURLResponse else {
+            throw AcademyAPIError.invalidResponse
+        }
+        if http.statusCode == 401 {
+            throw AcademyAPIError.unauthorized
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw AcademyAPIError.invalidResponse
+        }
+        return try JSONDecoder().decode(AcademyMeResponse.self, from: data)
+    }
+
+    public func fetchCGU(token: String?) async throws -> AcademyCGUResponse {
+        let url = baseURL.appendingPathComponent("api/mobile/v1/cgu")
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, resp): (Data, URLResponse)
+        do {
+            (data, resp) = try await session.data(for: req)
+        } catch {
+            throw AcademyAPIError.networkUnavailable
+        }
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AcademyAPIError.invalidResponse
+        }
+        return try JSONDecoder().decode(AcademyCGUResponse.self, from: data)
+    }
+
+    public func acceptCGU(version: String, contentHash: String, token: String) async throws -> AcademyCGUAcceptResponse {
+        guard !token.isEmpty else { throw AcademyAPIError.unauthorized }
+        let url = baseURL.appendingPathComponent("api/mobile/v1/cgu/accept")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let body: [String: String] = [
+            "version": version,
+            "contentHash": contentHash
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, resp): (Data, URLResponse)
+        do {
+            (data, resp) = try await session.data(for: req)
+        } catch {
+            throw AcademyAPIError.networkUnavailable
+        }
+
+        guard let http = resp as? HTTPURLResponse else {
+            throw AcademyAPIError.invalidResponse
+        }
+        if http.statusCode == 401 {
+            throw AcademyAPIError.unauthorized
+        }
+        if http.statusCode == 403 {
+            throw AcademyAPIError.forbiddenCenelisPermission(nil)
+        }
+        let decoded = try JSONDecoder().decode(AcademyCGUAcceptResponse.self, from: data)
+        if !decoded.ok {
+            throw AcademyAPIError.serverMessage(decoded.error ?? "Impossible d'enregistrer l'acceptation des CGU.")
+        }
+        return decoded
+    }
+
+    public func checkPinLaunchStatus(nonce: String, token: String) async -> AcademyPinStatusResponse? {
+        guard !nonce.isEmpty, !token.isEmpty else { return nil }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("api/mobile/v1/auth/pin-status"), resolvingAgainstBaseURL: false)
+        comps?.queryItems = [URLQueryItem(name: "nonce", value: nonce)]
+        guard let url = comps?.url else { return nil }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(AcademyPinStatusResponse.self, from: data) else {
+            return nil
+        }
         return decoded
     }
 

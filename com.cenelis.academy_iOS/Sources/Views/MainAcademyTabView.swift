@@ -82,5 +82,8 @@ public struct MainAcademyTabView: View {
         .sheet(isPresented: $vm.isShowingAuthSheet) {
             AcademyAuthSheet(vm: vm)
         }
+        .sheet(isPresented: $vm.isShowingCGUReadSheet) {
+            AcademyCGUReadOnlySheet(vm: vm)
+        }
     }
 }

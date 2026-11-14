@@ -10,25 +10,16 @@ public struct CenelisAcademyApp: App {
 
     public var body: some Scene {
         WindowGroup {
-            ZStack {
-                MainAcademyTabView(vm: store)
-                    .opacity(store.isInitialBooting ? 0 : 1)
-
-                if store.isInitialBooting {
-                    AcademyLaunchSplashView()
-                        .transition(.opacity.combined(with: .scale(scale: 1.04)))
-                        .zIndex(50)
+            AcademySecurityRootContainerView(vm: store)
+                .preferredColorScheme(store.themeMode.preferredColorScheme)
+                .task {
+                    await store.bootstrapOnLaunch()
                 }
-            }
-            .preferredColorScheme(store.themeMode.preferredColorScheme)
-            .task {
-                await store.bootstrapOnLaunch()
-            }
-            .onOpenURL { url in
-                Task {
-                    await store.handleSSOCallbackURL(url)
+                .onOpenURL { url in
+                    Task {
+                        await store.handleIncomingURL(url)
+                    }
                 }
-            }
         }
     }
 }

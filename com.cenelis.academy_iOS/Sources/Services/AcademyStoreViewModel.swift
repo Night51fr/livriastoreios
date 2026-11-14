@@ -86,7 +86,28 @@ public struct GlobalSearchResult: Identifiable, Sendable {
     public let actionResourceTabId: String?
 }
 
-// MARK: - ViewModel Principal Cenelis Academy (État Réactif, Gamification & Sync Cloud)
+public enum AcademySecurityGate: Equatable, Sendable {
+    case booting
+    case loginRequired
+    case permissionDenied
+    case cguAcceptanceRequired
+    case pinVerificationRequired
+    case unlocked
+}
+
+public struct PinSafariLaunchItem: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let url: URL
+    public let nonce: String
+
+    public init(url: URL, nonce: String) {
+        self.id = nonce
+        self.url = url
+        self.nonce = nonce
+    }
+}
+
+// MARK: - ViewModel Principal Cenelis Academy (État Réactif, Sécurité Cenelis Connect, CGU, Gamification & Sync Cloud)
 
 @MainActor
 public final class AcademyStoreViewModel: ObservableObject {
@@ -99,6 +120,15 @@ public final class AcademyStoreViewModel: ObservableObject {
     @Published public var isSyncing: Bool = false
     @Published public var isOfflineMode: Bool = false
     @Published public var lastSyncStatus: String = "Synchronisation prête"
+
+    // Sécurité Institutionnelle : Connexion obligatoire, Habilitation Interne/Externe, CGU & PIN Cenelis Connect à chaque lancement
+    @Published public var cguDocument: AcademyCGUDocument = .embeddedFallback
+    @Published public var serverCguAcceptance: AcademyCGUAcceptanceStatus? = nil
+    @Published public var isShowingCGUReadSheet: Bool = false
+    @Published public private(set) var isPinVerifiedForCurrentLaunch: Bool = false
+    @Published public var activePinSafariItem: PinSafariLaunchItem? = nil
+    @Published public var pinGateMessage: String? = nil
+    @Published public var shouldForceFreshSSOLogin: Bool = false
 
     // Préférences d'interface
     @Published public var themeMode: AcademyThemeMode = .system {
@@ -130,6 +160,43 @@ public final class AcademyStoreViewModel: ObservableObject {
 
     private let sharedSuite = UserDefaults(suiteName: "group.com.viplenetwork.shared")
     private var cloudPushTask: Task<Void, Never>?
+    private var pinPollingTask: Task<Void, Never>?
+    private var hasAutoOpenedPinInCurrentGateEntry: Bool = false
+
+    public var requiresCGUAcceptance: Bool {
+        guard learner.authenticated, !learner.email.isEmpty else { return true }
+        let local = AcademyAPIClient.shared.loadLocalCGUAcceptance(forEmail: learner.email)
+        let localMatches = (local?.version == cguDocument.version)
+            && (local?.hash.lowercased() == cguDocument.contentHash.lowercased())
+        if !localMatches {
+            return true
+        }
+        if let srv = serverCguAcceptance, srv.requiresAcceptance {
+            return true
+        }
+        return false
+    }
+
+    public var isCGUModifiedAfterPriorAcceptance: Bool {
+        let local = AcademyAPIClient.shared.loadLocalCGUAcceptance(forEmail: learner.email)
+        if let local, !local.version.isEmpty,
+           (local.version != cguDocument.version || local.hash.lowercased() != cguDocument.contentHash.lowercased()) {
+            return true
+        }
+        if let srv = serverCguAcceptance, !srv.acceptedVersion.isEmpty, srv.requiresAcceptance {
+            return true
+        }
+        return false
+    }
+
+    public var activeSecurityGate: AcademySecurityGate {
+        if isInitialBooting { return .booting }
+        if !learner.authenticated || mobileToken.isEmpty { return .loginRequired }
+        if !learner.hasCenelisAccess { return .permissionDenied }
+        if requiresCGUAcceptance { return .cguAcceptanceRequired }
+        if !isPinVerifiedForCurrentLaunch { return .pinVerificationRequired }
+        return .unlocked
+    }
 
     public init() {
         if let savedTheme = UserDefaults.standard.string(forKey: "ca.themeMode"),
@@ -151,56 +218,101 @@ public final class AcademyStoreViewModel: ObservableObject {
             ?? ""
         self.mobileToken = storedToken
 
-        if let savedEmail = UserDefaults.standard.string(forKey: "ca.learnerEmail"), !savedEmail.isEmpty {
+        if !storedToken.isEmpty,
+           let savedEmail = UserDefaults.standard.string(forKey: "ca.learnerEmail"), !savedEmail.isEmpty {
             let savedName = UserDefaults.standard.string(forKey: "ca.learnerName") ?? savedEmail
             let savedCid = UserDefaults.standard.string(forKey: "ca.learnerCid") ?? ""
             let savedGroups = UserDefaults.standard.stringArray(forKey: "ca.learnerGroups") ?? []
+            let savedAccess = UserDefaults.standard.bool(forKey: "ca.learnerHasAccess")
+            let savedScope = UserDefaults.standard.string(forKey: "ca.learnerScope") ?? "none"
+            let savedStatus = UserDefaults.standard.string(forKey: "ca.learnerRbacStatus") ?? "unregistered"
             self.learner = AcademyLearnerProfile(
-                authenticated: !storedToken.isEmpty,
+                authenticated: true,
                 email: savedEmail,
                 displayName: savedName,
                 cid: savedCid,
-                groups: savedGroups
+                groups: savedGroups,
+                hasCenelisAccess: savedAccess,
+                permissionScope: savedScope,
+                rbacStatus: savedStatus
             )
         }
 
-        // Pré-charger le cache local immédiatement
+        // Le code PIN Cenelis Connect n'est JAMAIS persisté d'un lancement à l'autre : il est exigé à CHAQUE lancement de l'application
+        self.isPinVerifiedForCurrentLaunch = false
+
         if let localProg = AcademyAPIClient.shared.loadLocalProgress() {
             self.progress = localProg
         }
-        if let cachedCat = AcademyAPIClient.shared.loadCachedBootstrap() {
-            self.catalog = hydrateBubblesIfNeeded(cachedCat)
-        }
     }
 
-    // MARK: - Démarrage & Synchronisation Live avec https://academy.prod.cenelis.com
+    // MARK: - Démarrage Sécurisé & Vérification d'Accès avec https://academy.prod.cenelis.com
 
     public func bootstrapOnLaunch() async {
-        let hadCachedCourses = !catalog.courses.isEmpty
-        if hadCachedCourses {
-            // Ne pas bloquer l'utilisateur si le cache local est déjà prêt
-            try? await Task.sleep(nanoseconds: 550_000_000)
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                isInitialBooting = false
+        // 1. Aucun jeton : charger les dernières CGU puis basculer immédiatement sur la connexion obligatoire
+        if mobileToken.isEmpty {
+            if let cguRes = try? await AcademyAPIClient.shared.fetchCGU(token: nil) {
+                self.cguDocument = cguRes.cgu
             }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            withAnimation(.spring(response: 0.48, dampingFraction: 0.85)) {
+                self.isInitialBooting = false
+            }
+            return
         }
 
-        await refreshCatalogAndSync(silent: hadCachedCourses)
+        // 2. Jeton présent : vérifier la session, l'habilitation interne/externe Cenelis et la version des CGU
+        await refreshSessionAndCGU()
 
-        if isInitialBooting {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                isInitialBooting = false
+        withAnimation(.spring(response: 0.48, dampingFraction: 0.85)) {
+            self.isInitialBooting = false
+        }
+
+        triggerAutoPinIfNeeded()
+    }
+
+    public func refreshSessionAndCGU() async {
+        guard !mobileToken.isEmpty else {
+            learner = AcademyLearnerProfile()
+            return
+        }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        do {
+            let me = try await AcademyAPIClient.shared.fetchMe(token: mobileToken)
+            self.isOfflineMode = false
+            if !me.authenticated {
+                clearStoredCredentialsOnly()
+                return
             }
+            let profile = me.learnerProfile
+            self.learner = profile
+            persistLearnerIdentity(profile, token: mobileToken)
+            if let srvCgu = me.cgu {
+                self.cguDocument = srvCgu
+            }
+            if let acc = me.cguAcceptance {
+                self.serverCguAcceptance = acc
+            }
+        } catch AcademyAPIError.unauthorized {
+            clearStoredCredentialsOnly()
+        } catch {
+            self.isOfflineMode = true
+            self.pinGateMessage = "Connexion réseau requise pour vérifier votre habilitation et votre code PIN Cenelis Connect."
         }
     }
 
     public func refreshCatalogAndSync(silent: Bool = false) async {
+        guard learner.authenticated, learner.hasCenelisAccess, !mobileToken.isEmpty else {
+            return
+        }
         if !silent { isSyncing = true }
         defer { isSyncing = false }
 
         do {
             let livePayload = try await AcademyAPIClient.shared.fetchBootstrap(
-                token: mobileToken.isEmpty ? nil : mobileToken,
+                token: mobileToken,
                 includeHidden: true
             )
             self.catalog = livePayload
@@ -210,7 +322,12 @@ public final class AcademyStoreViewModel: ObservableObject {
                 self.learner = srvLearner
                 persistLearnerIdentity(srvLearner, token: mobileToken)
             }
-
+            if let srvCgu = livePayload.cgu {
+                self.cguDocument = srvCgu
+            }
+            if let srvAcc = livePayload.cguAcceptance {
+                self.serverCguAcceptance = srvAcc
+            }
             if let cloudProg = livePayload.progress {
                 self.progress = Self.mergeProgress(local: self.progress, cloud: cloudProg)
             }
@@ -219,13 +336,22 @@ public final class AcademyStoreViewModel: ObservableObject {
             evaluateTrophies(silent: true)
             AcademyAPIClient.shared.saveLocalProgress(self.progress)
 
-            if learner.authenticated && !mobileToken.isEmpty {
-                _ = await AcademyAPIClient.shared.pushCloudProgress(self.progress, token: mobileToken)
-                self.lastSyncStatus = "Synchronisé · v\(livePayload.contentVersion.prefix(8))"
+            _ = await AcademyAPIClient.shared.pushCloudProgress(self.progress, token: mobileToken)
+            self.lastSyncStatus = "Synchronisé · v\(livePayload.contentVersion.prefix(8))"
+        } catch AcademyAPIError.unauthorized {
+            logout()
+        } catch AcademyAPIError.forbiddenCenelisPermission(let srvProfile) {
+            if let srvProfile {
+                self.learner = srvProfile
             } else {
-                self.lastSyncStatus = "Catalogue en direct · v\(livePayload.contentVersion.prefix(8))"
+                self.learner.hasCenelisAccess = false
+                self.learner.permissionScope = "none"
             }
+            persistLearnerIdentity(self.learner, token: mobileToken)
         } catch {
+            if self.catalog.courses.isEmpty, let cachedCat = AcademyAPIClient.shared.loadCachedBootstrap() {
+                self.catalog = hydrateBubblesIfNeeded(cachedCat)
+            }
             self.isOfflineMode = true
             self.lastSyncStatus = catalog.courses.isEmpty
                 ? "Hors-ligne — vérifiez votre connexion Internet"
@@ -244,6 +370,117 @@ public final class AcademyStoreViewModel: ObservableObject {
         return copy
     }
 
+    // MARK: - Acceptation Obligatoire des CGU (Premier Lancement ou Modification)
+
+    public func acceptCurrentCGU() async throws {
+        guard learner.authenticated, learner.hasCenelisAccess, !mobileToken.isEmpty else {
+            throw AcademyAPIError.unauthorized
+        }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        let targetVersion = cguDocument.version
+        let targetHash = cguDocument.contentHash
+        let res = try await AcademyAPIClient.shared.acceptCGU(
+            version: targetVersion,
+            contentHash: targetHash,
+            token: mobileToken
+        )
+
+        let acceptedVer = res.acceptedVersion ?? targetVersion
+        let acceptedHash = res.acceptedHash ?? targetHash
+        let acceptedAt = res.acceptedAtUtc ?? ISO8601DateFormatter().string(from: Date())
+
+        AcademyAPIClient.shared.saveLocalCGUAcceptance(
+            forEmail: learner.email,
+            version: acceptedVer,
+            hash: acceptedHash,
+            acceptedAt: acceptedAt
+        )
+        self.serverCguAcceptance = AcademyCGUAcceptanceStatus(
+            accepted: true,
+            requiresAcceptance: false,
+            acceptedVersion: acceptedVer,
+            acceptedHash: acceptedHash,
+            acceptedAtUtc: acceptedAt
+        )
+        AcademyHaptics.success()
+
+        // Dès l'acceptation des CGU, déclencher automatiquement l'ouverture du code PIN Cenelis Connect dans Safari In-App
+        hasAutoOpenedPinInCurrentGateEntry = false
+        triggerAutoPinIfNeeded()
+    }
+
+    // MARK: - Code PIN Cenelis Connect via Safari In-App (À CHAQUE LANCEMENT DE L'APPLICATION)
+
+    public func triggerAutoPinIfNeeded() {
+        guard activeSecurityGate == .pinVerificationRequired else { return }
+        guard !hasAutoOpenedPinInCurrentGateEntry else { return }
+        hasAutoOpenedPinInCurrentGateEntry = true
+        openInAppCenelisConnectPin()
+    }
+
+    public func openInAppCenelisConnectPin() {
+        guard learner.authenticated, learner.hasCenelisAccess, !mobileToken.isEmpty else { return }
+        pinPollingTask?.cancel()
+        pinGateMessage = nil
+
+        let nonce = "iospin-" + UUID().uuidString.lowercased()
+        guard let url = AcademyAPIClient.shared.buildPinLaunchURL(token: mobileToken, nonce: nonce) else {
+            pinGateMessage = "Impossible d'initialiser l'URL Cenelis Connect PIN."
+            return
+        }
+
+        activePinSafariItem = PinSafariLaunchItem(url: url, nonce: nonce)
+        startPinVerificationWatcher(nonce: nonce)
+    }
+
+    public func handlePinSafariDismissedByUser() {
+        pinPollingTask?.cancel()
+        activePinSafariItem = nil
+        if !isPinVerifiedForCurrentLaunch {
+            pinGateMessage = "La validation de votre code PIN sur la page Cenelis Connect est requise à chaque ouverture de l'application pour accéder à Cenelis Academy."
+        }
+    }
+
+    private func startPinVerificationWatcher(nonce: String) {
+        let token = mobileToken
+        pinPollingTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled, let self else { return }
+                guard self.activePinSafariItem?.nonce == nonce else { return }
+
+                if let status = await AcademyAPIClient.shared.checkPinLaunchStatus(nonce: nonce, token: token) {
+                    if status.verified, let proof = status.proof, !proof.isEmpty {
+                        await self.completePinUnlockForCurrentLaunch()
+                        return
+                    }
+                    if status.expired == true {
+                        self.activePinSafariItem = nil
+                        self.pinGateMessage = "La demande de code PIN Cenelis Connect a expiré. Touchez le bouton ci-dessous pour rouvrir la page."
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    private func completePinUnlockForCurrentLaunch() async {
+        guard !isPinVerifiedForCurrentLaunch else { return }
+        pinPollingTask?.cancel()
+        AcademyHaptics.success()
+
+        // Ferme automatiquement la page Safari In-App Cenelis Connect PIN et déverrouille l'accès !
+        activePinSafariItem = nil
+        pinGateMessage = nil
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.84)) {
+            isPinVerifiedForCurrentLaunch = true
+        }
+
+        await refreshCatalogAndSync(silent: false)
+    }
+
     // MARK: - Authentification Viple Live ID & SSO Mobile
 
     public func loginWithPassword(email: String, password: String) async throws {
@@ -255,30 +492,59 @@ public final class AcademyStoreViewModel: ObservableObject {
             throw AcademyAPIError.invalidResponse
         }
 
+        self.shouldForceFreshSSOLogin = false
+        self.isPinVerifiedForCurrentLaunch = false
+        self.hasAutoOpenedPinInCurrentGateEntry = false
         self.mobileToken = token
+
         if let profile = res.learner {
             self.learner = profile
             persistLearnerIdentity(profile, token: token)
         }
-        if let cloudProg = res.progress {
-            self.progress = Self.mergeProgress(local: self.progress, cloud: cloudProg)
+        if let srvCgu = res.cgu {
+            self.cguDocument = srvCgu
         }
-
-        evaluateTrophies(silent: true)
-        AcademyAPIClient.shared.saveLocalProgress(self.progress)
-        _ = await AcademyAPIClient.shared.pushCloudProgress(self.progress, token: token)
+        if let srvAcc = res.cguAcceptance {
+            self.serverCguAcceptance = srvAcc
+        }
+        if let cloudProg = res.progress, self.learner.hasCenelisAccess {
+            self.progress = Self.mergeProgress(local: self.progress, cloud: cloudProg)
+            evaluateTrophies(silent: true)
+            AcademyAPIClient.shared.saveLocalProgress(self.progress)
+        }
 
         AcademyHaptics.success()
         isShowingAuthSheet = false
-        showXPToast(amount: 50, label: "Compte Cenelis synchronisé", isMajor: true)
+        triggerAutoPinIfNeeded()
     }
 
     public func handleSSOCallbackURL(_ url: URL) async {
+        await handleIncomingURL(url)
+    }
+
+    public func handleIncomingURL(_ url: URL) async {
         guard url.scheme?.lowercased() == "cenelisacademy",
               let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return
         }
+        let host = (url.host ?? "").lowercased()
         let items = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+
+        // 1. Retour de validation du code PIN Cenelis Connect (pont de secours cenelisacademy://pin-verified)
+        if host == "pin-verified" {
+            guard items["ok"] == "1",
+                  let nonce = items["nonce"], !nonce.isEmpty,
+                  let proof = items["proof"], !proof.isEmpty else {
+                return
+            }
+            if let status = await AcademyAPIClient.shared.checkPinLaunchStatus(nonce: nonce, token: mobileToken),
+               status.verified, status.proof == proof {
+                await completePinUnlockForCurrentLaunch()
+            }
+            return
+        }
+
+        // 2. Retour de connexion SSO Viple Live ID / Cenelis Connect (cenelisacademy://auth)
         guard items["ok"] == "1", let token = items["token"], !token.isEmpty else {
             AcademyHaptics.warning()
             return
@@ -291,40 +557,62 @@ public final class AcademyStoreViewModel: ObservableObject {
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        let hasAccess = items["hasAccess"] == "1"
+        let scope = items["scope"]?.isEmpty == false ? items["scope"]! : (hasAccess ? "interne" : "none")
+        let rbacStatus = items["status"] ?? (hasAccess ? "approved" : "unregistered")
 
         let profile = AcademyLearnerProfile(
             authenticated: true,
             email: email,
             displayName: name,
             cid: cid,
-            groups: groups
+            groups: groups,
+            hasCenelisAccess: hasAccess,
+            permissionScope: scope,
+            rbacStatus: rbacStatus
         )
+
+        self.shouldForceFreshSSOLogin = false
+        self.isPinVerifiedForCurrentLaunch = false
+        self.hasAutoOpenedPinInCurrentGateEntry = false
         self.mobileToken = token
         self.learner = profile
         persistLearnerIdentity(profile, token: token)
 
-        if let cloudProg = await AcademyAPIClient.shared.fetchCloudProgress(token: token) {
-            self.progress = Self.mergeProgress(local: self.progress, cloud: cloudProg)
-        }
-        AcademyAPIClient.shared.saveLocalProgress(self.progress)
-        _ = await AcademyAPIClient.shared.pushCloudProgress(self.progress, token: token)
+        await refreshSessionAndCGU()
 
         AcademyHaptics.success()
         isShowingAuthSheet = false
-        showXPToast(amount: 50, label: "SSO Cenelis Connect activé", isMajor: true)
+        triggerAutoPinIfNeeded()
     }
 
-    public func logout() {
-        AcademyHaptics.medium()
+    private func clearStoredCredentialsOnly() {
+        pinPollingTask?.cancel()
+        activePinSafariItem = nil
+        isPinVerifiedForCurrentLaunch = false
+        hasAutoOpenedPinInCurrentGateEntry = false
         mobileToken = ""
         learner = AcademyLearnerProfile()
+        serverCguAcceptance = nil
         UserDefaults.standard.removeObject(forKey: "ca.mobileToken")
         UserDefaults.standard.removeObject(forKey: "ca.learnerEmail")
         UserDefaults.standard.removeObject(forKey: "ca.learnerName")
         UserDefaults.standard.removeObject(forKey: "ca.learnerCid")
         UserDefaults.standard.removeObject(forKey: "ca.learnerGroups")
+        UserDefaults.standard.removeObject(forKey: "ca.learnerHasAccess")
+        UserDefaults.standard.removeObject(forKey: "ca.learnerScope")
+        UserDefaults.standard.removeObject(forKey: "ca.learnerRbacStatus")
         sharedSuite?.removeObject(forKey: "ca.mobileToken")
         sharedSuite?.removeObject(forKey: "viple.shared.email")
+    }
+
+    public func logout() {
+        AcademyHaptics.medium()
+        activeCourseId = nil
+        clearStoredCredentialsOnly()
+        catalog = AcademyBootstrapPayload()
+        shouldForceFreshSSOLogin = true
+
         if let cookies = HTTPCookieStorage.shared.cookies {
             for cookie in cookies {
                 let dom = cookie.domain.lowercased()
@@ -342,6 +630,9 @@ public final class AcademyStoreViewModel: ObservableObject {
         UserDefaults.standard.set(profile.displayName, forKey: "ca.learnerName")
         UserDefaults.standard.set(profile.cid, forKey: "ca.learnerCid")
         UserDefaults.standard.set(profile.groups, forKey: "ca.learnerGroups")
+        UserDefaults.standard.set(profile.hasCenelisAccess, forKey: "ca.learnerHasAccess")
+        UserDefaults.standard.set(profile.permissionScope, forKey: "ca.learnerScope")
+        UserDefaults.standard.set(profile.rbacStatus, forKey: "ca.learnerRbacStatus")
         sharedSuite?.set(token, forKey: "ca.mobileToken")
         sharedSuite?.set(profile.email, forKey: "viple.shared.email")
     }
@@ -876,7 +1167,7 @@ public final class AcademyStoreViewModel: ObservableObject {
 
     private func saveAndScheduleCloudSync() {
         AcademyAPIClient.shared.saveLocalProgress(progress)
-        guard learner.authenticated, !mobileToken.isEmpty else { return }
+        guard learner.authenticated, learner.hasCenelisAccess, isPinVerifiedForCurrentLaunch, !mobileToken.isEmpty else { return }
 
         cloudPushTask?.cancel()
         let snapshot = progress

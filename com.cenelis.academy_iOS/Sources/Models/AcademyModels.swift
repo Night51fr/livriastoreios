@@ -12,10 +12,12 @@ public struct AcademyBootstrapPayload: Codable, Sendable {
     public var bubbles: [String: AcademyBubble]
     public var resources: [AcademyResourceTab]
     public var learner: AcademyLearnerProfile?
+    public var cgu: AcademyCGUDocument?
+    public var cguAcceptance: AcademyCGUAcceptanceStatus?
     public var progress: AcademyUserProgress?
 
     enum CodingKeys: String, CodingKey {
-        case ok, contentVersion, publicBaseUrl, generatedAtUtc, courses, deepDives, bubbles, resources, learner, progress
+        case ok, contentVersion, publicBaseUrl, generatedAtUtc, courses, deepDives, bubbles, resources, learner, cgu, cguAcceptance, progress
     }
 
     public init(
@@ -28,6 +30,8 @@ public struct AcademyBootstrapPayload: Codable, Sendable {
         bubbles: [String: AcademyBubble] = [:],
         resources: [AcademyResourceTab] = [],
         learner: AcademyLearnerProfile? = nil,
+        cgu: AcademyCGUDocument? = nil,
+        cguAcceptance: AcademyCGUAcceptanceStatus? = nil,
         progress: AcademyUserProgress? = nil
     ) {
         self.ok = ok
@@ -39,6 +43,8 @@ public struct AcademyBootstrapPayload: Codable, Sendable {
         self.bubbles = bubbles
         self.resources = resources
         self.learner = learner
+        self.cgu = cgu
+        self.cguAcceptance = cguAcceptance
         self.progress = progress
     }
 
@@ -53,6 +59,8 @@ public struct AcademyBootstrapPayload: Codable, Sendable {
         self.bubbles = (try? c.decode([String: AcademyBubble].self, forKey: .bubbles)) ?? [:]
         self.resources = (try? c.decode([AcademyResourceTab].self, forKey: .resources)) ?? []
         self.learner = try? c.decode(AcademyLearnerProfile.self, forKey: .learner)
+        self.cgu = try? c.decode(AcademyCGUDocument.self, forKey: .cgu)
+        self.cguAcceptance = try? c.decode(AcademyCGUAcceptanceStatus.self, forKey: .cguAcceptance)
         self.progress = try? c.decode(AcademyUserProgress.self, forKey: .progress)
     }
 }
@@ -64,6 +72,9 @@ public struct AcademyLearnerProfile: Codable, Sendable, Equatable {
     public var avatarUrl: String?
     public var cid: String
     public var groups: [String]
+    public var hasCenelisAccess: Bool
+    public var permissionScope: String
+    public var rbacStatus: String
 
     public init(
         authenticated: Bool = false,
@@ -71,7 +82,10 @@ public struct AcademyLearnerProfile: Codable, Sendable, Equatable {
         displayName: String = "",
         avatarUrl: String? = nil,
         cid: String = "",
-        groups: [String] = []
+        groups: [String] = [],
+        hasCenelisAccess: Bool = false,
+        permissionScope: String = "none",
+        rbacStatus: String = "anonymous"
     ) {
         self.authenticated = authenticated
         self.email = email
@@ -79,10 +93,27 @@ public struct AcademyLearnerProfile: Codable, Sendable, Equatable {
         self.avatarUrl = avatarUrl
         self.cid = cid
         self.groups = groups
+        self.hasCenelisAccess = hasCenelisAccess
+        self.permissionScope = permissionScope
+        self.rbacStatus = rbacStatus
+    }
+
+    public var isInternalCenelis: Bool {
+        hasCenelisAccess && permissionScope.lowercased() == "interne"
+    }
+
+    public var isExternalCenelis: Bool {
+        hasCenelisAccess && permissionScope.lowercased() == "externe"
+    }
+
+    public var permissionBadgeTitle: String {
+        if isInternalCenelis { return "Habilitation Interne Cenelis" }
+        if isExternalCenelis { return "Habilitation Externe Cenelis" }
+        return "Aucune habilitation Cenelis"
     }
 
     enum CodingKeys: String, CodingKey {
-        case authenticated, email, displayName, avatarUrl, cid, groups
+        case authenticated, email, displayName, avatarUrl, cid, groups, hasCenelisAccess, permissionScope, rbacStatus
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,7 +123,145 @@ public struct AcademyLearnerProfile: Codable, Sendable, Equatable {
         self.displayName = (try? c.decode(String.self, forKey: .displayName)) ?? ""
         self.avatarUrl = try? c.decode(String.self, forKey: .avatarUrl)
         self.cid = (try? c.decode(String.self, forKey: .cid)) ?? ""
-        self.groups = (try? c.decode([String].self, forKey: .groups)) ?? []
+        let decodedGroups = (try? c.decode([String].self, forKey: .groups)) ?? []
+        self.groups = decodedGroups
+        self.rbacStatus = (try? c.decode(String.self, forKey: .rbacStatus)) ?? "unregistered"
+        if let explicitAccess = try? c.decode(Bool.self, forKey: .hasCenelisAccess) {
+            self.hasCenelisAccess = explicitAccess
+        } else {
+            self.hasCenelisAccess = self.rbacStatus.lowercased() == "approved" && !decodedGroups.isEmpty
+        }
+        if let explicitScope = try? c.decode(String.self, forKey: .permissionScope), !explicitScope.isEmpty {
+            self.permissionScope = explicitScope
+        } else if self.hasCenelisAccess {
+            let hasInternal = decodedGroups.contains { !$0.lowercased().hasPrefix("e.") }
+            self.permissionScope = hasInternal ? "interne" : "externe"
+        } else {
+            self.permissionScope = "none"
+        }
+    }
+}
+
+// MARK: - Conditions Générales d'Utilisation (CGU) Versionnées & Hashées
+
+public struct AcademyCGUSection: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var number: String
+    public var title: String
+    public var body: String
+
+    public init(id: String, number: String, title: String, body: String) {
+        self.id = id
+        self.number = number
+        self.title = title
+        self.body = body
+    }
+}
+
+public struct AcademyCGUDocument: Codable, Sendable, Equatable {
+    public var version: String
+    public var effectiveDate: String
+    public var contentHash: String
+    public var title: String
+    public var subtitle: String
+    public var sections: [AcademyCGUSection]
+
+    public init(
+        version: String,
+        effectiveDate: String,
+        contentHash: String,
+        title: String,
+        subtitle: String,
+        sections: [AcademyCGUSection]
+    ) {
+        self.version = version
+        self.effectiveDate = effectiveDate
+        self.contentHash = contentHash
+        self.title = title
+        self.subtitle = subtitle
+        self.sections = sections
+    }
+
+    public static let embeddedFallback = AcademyCGUDocument(
+        version: "2026.11.1",
+        effectiveDate: "14 novembre 2026",
+        contentHash: "25173495d38dfbf66c26eaae",
+        title: "Conditions Générales d'Utilisation — Cenelis Academy",
+        subtitle: "Plateforme institutionnelle de formation, de certification interne et de maîtrise opérationnelle du Groupe Cenelis (Cenelis SA · Viple · Livria).",
+        sections: [
+            AcademyCGUSection(
+                id: "objet-acces",
+                number: "Article 1",
+                title: "Objet et Réserve d'Accès aux Personnes Habilitées",
+                body: "L'application mobile Cenelis Academy est un environnement professionnel strictement réservé aux collaborateurs internes du Groupe Cenelis (Cenelis SA) ainsi qu'aux partenaires et gestionnaires externes titulaires d'une habilitation contractuelle active délivrée via Cenelis AdminGest (notamment mandats e.GL1, e.GL2, e.GVN_u ou délégations temporaires). Tout compte dépourvu d'habilitation interne ou externe active se voit refuser l'accès aux contenus pédagogiques et opérationnels."
+            ),
+            AcademyCGUSection(
+                id: "authentification-pin",
+                number: "Article 2",
+                title: "Connexion Nominative & Code PIN Cenelis Connect à Chaque Ouverture",
+                body: "L'accès à l'application requiert obligatoirement une authentification nominative Viple Live ID / Cenelis Connect suivie, à chaque lancement de l'application, de la validation personnelle du code PIN Cenelis Connect (4 ou 6 chiffres) via le portail sécurisé Cenelis Connect intégré. Les identifiants et le code PIN sont strictement personnels, confidentiels et incessibles. Toute divulgation ou prêt de session engage la responsabilité disciplinaire et contractuelle du titulaire."
+            ),
+            AcademyCGUSection(
+                id: "confidentialite-secret",
+                number: "Article 3",
+                title: "Confidentialité Absolue & Protection du Secret des Affaires",
+                body: "L'ensemble des parcours métiers, architectures techniques, procédures opérationnelles standardisées (SOP), captures de consoles d'administration (/admin), guides Viple SysGRC, protocoles cryptographiques 2D-DOC et scripts commerciaux accessibles dans Cenelis Academy constituent des informations confidentielles protégées au titre du secret des affaires du Groupe Cenelis. Il est formellement interdit de reproduire, capturer, transférer ou divulguer tout ou partie de ces contenus à des tiers non habilités."
+            ),
+            AcademyCGUSection(
+                id: "rgpd-deontologie",
+                number: "Article 4",
+                title: "Conformité RGPD, Périmètre Externe & Déontologie Opérationnelle",
+                body: "L'utilisateur s'engage à appliquer rigoureusement les règles de protection des données personnelles (RGPD) enseignées au sein des parcours, notamment le déclenchement systématique d'une vérification légale OTP client avant toute consultation ou action sensible sur un dossier Viple Live ID, ainsi que le strict respect des limites de son groupe d'habilitation (interne ou externe e.GL / e.GVN_u)."
+            ),
+            AcademyCGUSection(
+                id: "propriete-evaluations",
+                number: "Article 5",
+                title: "Propriété Intellectuelle & Loyauté des Certifications",
+                body: "Tous les textes, schémas interactifs, capsules vidéo explicatives, mini-jeux d'entraînement et référentiels demeurent la propriété exclusive de Cenelis SA. L'apprenant s'engage à réaliser personnellement et loyalement les évaluations certifiantes (seuil d'aptitude de 80 % et maîtrise consolidée à 100 %) conditionnant l'exercice de ses missions."
+            ),
+            AcademyCGUSection(
+                id: "audit-modifications",
+                number: "Article 6",
+                title: "Journalisation de Sécurité, Révocation & Mise à Jour des CGU",
+                body: "À des fins de sécurité, de conformité réglementaire et d'audit interne, les connexions, les validations du code PIN Cenelis Connect et l'acceptation horodatée des présentes CGU sont journalisées. La suspension ou la révocation d'une habilitation dans Cenelis AdminGest entraîne le blocage immédiat de l'accès mobile. En cas de modification ou de mise à jour des présentes CGU, une nouvelle acceptation expresse sera automatiquement requise dès l'ouverture suivante de l'application."
+            )
+        ]
+    )
+}
+
+public struct AcademyCGUAcceptanceStatus: Codable, Sendable, Equatable {
+    public var accepted: Bool
+    public var requiresAcceptance: Bool
+    public var acceptedVersion: String
+    public var acceptedHash: String
+    public var acceptedAtUtc: String
+
+    public init(
+        accepted: Bool = false,
+        requiresAcceptance: Bool = true,
+        acceptedVersion: String = "",
+        acceptedHash: String = "",
+        acceptedAtUtc: String = ""
+    ) {
+        self.accepted = accepted
+        self.requiresAcceptance = requiresAcceptance
+        self.acceptedVersion = acceptedVersion
+        self.acceptedHash = acceptedHash
+        self.acceptedAtUtc = acceptedAtUtc
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case accepted, requiresAcceptance, acceptedVersion, acceptedHash, acceptedAtUtc
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let acc = (try? c.decode(Bool.self, forKey: .accepted)) ?? false
+        self.accepted = acc
+        self.requiresAcceptance = (try? c.decode(Bool.self, forKey: .requiresAcceptance)) ?? !acc
+        self.acceptedVersion = (try? c.decode(String.self, forKey: .acceptedVersion)) ?? ""
+        self.acceptedHash = (try? c.decode(String.self, forKey: .acceptedHash)) ?? ""
+        self.acceptedAtUtc = (try? c.decode(String.self, forKey: .acceptedAtUtc)) ?? ""
     }
 }
 

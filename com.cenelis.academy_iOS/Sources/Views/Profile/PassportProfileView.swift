@@ -59,6 +59,15 @@ public struct PassportProfileView: View {
             }
 
             if vm.learner.authenticated {
+                HStack(spacing: 8) {
+                    AcademyBadge(
+                        vm.learner.permissionBadgeTitle,
+                        icon: "checkmark.shield.fill",
+                        style: vm.learner.isExternalCenelis ? .copper : .pine
+                    )
+                    AcademyBadge("PIN Cenelis Connect vérifié", icon: "lock.open.fill", style: .success)
+                }
+
                 if !vm.learner.groups.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
@@ -68,6 +77,30 @@ public struct PassportProfileView: View {
                         }
                     }
                 }
+
+                Button {
+                    AcademyHaptics.selection()
+                    vm.isShowingCGUReadSheet = true
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.checkmark")
+                            .foregroundStyle(AcademyPalette.pine)
+                        Text("Conditions Générales d'Utilisation acceptées (v\(vm.cguDocument.version))")
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(AcademyPalette.ink)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(AcademyPalette.inkMuted)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(AcademyPalette.surfaceSubtle)
+                    )
+                }
+                .buttonStyle(.plain)
 
                 HStack(spacing: 10) {
                     Button {
@@ -91,22 +124,6 @@ public struct PassportProfileView: View {
                             .foregroundStyle(AcademyPalette.danger)
                     }
                 }
-            } else {
-                Text("Connectez votre compte Viple Live ID / Cenelis Connect pour retrouver la même progression sur le site web academy.prod.cenelis.com et sur votre iPhone.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(AcademyPalette.inkSecondary)
-
-                Button {
-                    AcademyHaptics.medium()
-                    vm.isShowingAuthSheet = true
-                } label: {
-                    Label("Se connecter avec Viple Live ID / SSO", systemImage: "person.badge.key.fill")
-                        .font(.system(size: 14.5, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 46)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(AcademyPalette.pineSolid))
-                }
-                .buttonStyle(SpringPressableButtonStyle())
             }
         }
         .padding(16)
