@@ -324,7 +324,16 @@ public final class AcademyStoreViewModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "ca.learnerCid")
         UserDefaults.standard.removeObject(forKey: "ca.learnerGroups")
         sharedSuite?.removeObject(forKey: "ca.mobileToken")
-        lastSyncStatus = "Session locale active"
+        sharedSuite?.removeObject(forKey: "viple.shared.email")
+        if let cookies = HTTPCookieStorage.shared.cookies {
+            for cookie in cookies {
+                let dom = cookie.domain.lowercased()
+                if dom.contains("cenelis.") || dom.contains("viple") || dom.contains("livria") {
+                    HTTPCookieStorage.shared.deleteCookie(cookie)
+                }
+            }
+        }
+        lastSyncStatus = "Session déconnectée"
     }
 
     private func persistLearnerIdentity(_ profile: AcademyLearnerProfile, token: String) {
@@ -445,6 +454,22 @@ public final class AcademyStoreViewModel: ObservableObject {
         progress.bookmarkedParts[partId] == true
     }
 
+    public func isVideoWatched(_ videoId: String) -> Bool {
+        progress.watchedVideos[videoId] != nil
+    }
+
+    public func markVideoWatched(_ videoId: String) {
+        guard !videoId.isEmpty else { return }
+        let isFirst = (progress.watchedVideos[videoId] == nil)
+        progress.watchedVideos[videoId] = Date().timeIntervalSince1970 * 1000
+        if isFirst {
+            AcademyHaptics.success()
+            awardXP(30, reason: "Capsule vidéo visionnée", isMajor: false)
+            evaluateTrophies(silent: false)
+        }
+        saveAndScheduleCloudSync()
+    }
+
     // MARK: - Actions du Lecteur de Cours (Validation Page, Bulles, Approfondissements)
 
     public func completePartAndAdvance(in course: AcademyCourse) {
@@ -491,8 +516,12 @@ public final class AcademyStoreViewModel: ObservableObject {
 
     public func openBubble(key: String, fallbackLabel: String? = nil) {
         AcademyHaptics.light()
-        let cleanKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let found = catalog.bubbles[cleanKey] {
+        let rawKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let aliases: [String: String] = [
+            "loi_lang": "prix_unique_livre"
+        ]
+        let cleanKey = aliases[rawKey] ?? rawKey
+        if let found = catalog.bubbles[cleanKey] ?? catalog.bubbles[rawKey] {
             let firstDiscovery = progress.exploredBubbles[cleanKey] != true
             progress.exploredBubbles[cleanKey] = true
             activeBubble = found
@@ -893,19 +922,20 @@ public final class AcademyStoreViewModel: ObservableObject {
             }
         }
 
-        // 2. Pages de cours
+        // 2. Pages de cours & Capsules vidéo
         for course in catalog.courses {
             for (idx, part) in course.parts.enumerated() {
                 let bodyConcat = part.blocks.flatMap { b in
-                    [b.heading ?? "", b.title ?? "", b.text ?? ""] + b.paragraphs
+                    [b.heading ?? "", b.title ?? "", b.intro ?? "", b.text ?? ""] + b.paragraphs
                 }.joined(separator: " ")
+                let videoConcat = [part.video?.title ?? "", part.video?.transcript ?? ""].joined(separator: " ")
 
-                if matches(part.title) || matches(part.summary) || matches(bodyConcat) {
+                if matches(part.title) || matches(part.summary) || matches(bodyConcat) || matches(videoConcat) {
                     results.append(GlobalSearchResult(
                         id: "part-\(course.id)-\(part.id)",
                         kind: course.number,
                         icon: AcademyIcons.sfSymbol(for: course.icon),
-                        title: part.title,
+                        title: AcademyRichTextParser.plainText(part.title),
                         snippet: AcademyRichTextParser.plainText(part.summary),
                         actionCourseId: course.id,
                         actionPartIndex: idx,
@@ -925,8 +955,8 @@ public final class AcademyStoreViewModel: ObservableObject {
                     id: "dd-\(dive.id)",
                     kind: "Approfondissement 5 paliers",
                     icon: AcademyIcons.sfSymbol(for: dive.icon),
-                    title: dive.title,
-                    snippet: dive.subtitle,
+                    title: AcademyRichTextParser.plainText(dive.title),
+                    snippet: AcademyRichTextParser.plainText(dive.subtitle),
                     actionCourseId: nil,
                     actionPartIndex: nil,
                     actionBubbleKey: nil,
@@ -1035,8 +1065,11 @@ public final class AcademyStoreViewModel: ObservableObject {
         for (b, seen) in cloud.exploredBubbles where seen { out.exploredBubbles[b] = true }
         for (b, mark) in cloud.bookmarkedParts where mark { out.bookmarkedParts[b] = true }
         for (s, chk) in cloud.checkedSopSteps where chk { out.checkedSopSteps[s] = true }
+        for (vid, ts) in cloud.watchedVideos {
+            out.watchedVideos[vid] = max(out.watchedVideos[vid] ?? 0, ts)
+        }
 
-        let floorXP = (out.completedParts.count * 25) + (out.passedQuizzes.count * 250)
+        let floorXP = (out.completedParts.count * 25) + (out.passedQuizzes.count * 250) + (out.watchedVideos.count * 30)
         out.xp = max(out.xp, floorXP)
         return out
     }

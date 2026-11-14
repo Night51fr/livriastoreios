@@ -33,6 +33,17 @@ public struct NativeCourseReaderView: View {
         return course.chapters.first(where: { vm.activeStepIndex >= $0.startIndex && vm.activeStepIndex <= $0.endIndex })
     }
 
+    private var activePageVideo: AcademyVideoCapsule? {
+        guard let part = currentPart else { return nil }
+        if let pv = part.video {
+            return pv
+        }
+        if let ch = currentChapter, ch.startIndex == vm.activeStepIndex, let cv = ch.video {
+            return cv
+        }
+        return nil
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             readerTopHeader
@@ -183,6 +194,10 @@ public struct NativeCourseReaderView: View {
 
                     pageHeroCard(part: part)
 
+                    if let vid = activePageVideo {
+                        AcademyVideoCapsuleCard(video: vid, vm: vm)
+                    }
+
                     ForEach(part.blocks) { block in
                         NativeBlockRendererView(block: block, vm: vm)
                     }
@@ -203,17 +218,19 @@ public struct NativeCourseReaderView: View {
     // MARK: - Mode 2 : Cartes Focus (Swipe Deck Bloc par Bloc, Ultra-Intuitif Mobile)
 
     private func focusDeckPageView(part: AcademyPart) -> some View {
-        let totalCards = max(1, part.blocks.count)
+        let pageVideo = activePageVideo
+        let videoOffset = (pageVideo != nil) ? 1 : 0
+        let totalCards = max(1, part.blocks.count + videoOffset)
         return VStack(spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     if let ch = currentChapter {
-                        Text("CHAPITRE \(ch.id) · \(ch.title.uppercased())")
+                        Text("CHAPITRE \(ch.id) · \(AcademyRichTextParser.plainText(ch.title).uppercased())")
                             .font(.system(size: 10, weight: .heavy, design: .rounded))
                             .foregroundStyle(AcademyPalette.copper)
                             .lineLimit(1)
                     }
-                    Text(part.title)
+                    Text(AcademyRichTextParser.plainText(part.title))
                         .font(.system(size: 16, weight: .black, design: .rounded))
                         .foregroundStyle(AcademyPalette.ink)
                         .lineLimit(2)
@@ -225,6 +242,19 @@ public struct NativeCourseReaderView: View {
             .padding(.top, 10)
 
             TabView(selection: $focusBlockIndex) {
+                if let vid = pageVideo {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            AcademyVideoCapsuleCard(video: vid, vm: vm)
+                            if part.blocks.isEmpty {
+                                pedagogicalSupportSection(part: part)
+                            }
+                        }
+                        .padding(16)
+                    }
+                    .tag(0)
+                }
+
                 ForEach(Array(part.blocks.enumerated()), id: \.offset) { idx, block in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
@@ -235,7 +265,7 @@ public struct NativeCourseReaderView: View {
                         }
                         .padding(16)
                     }
-                    .tag(idx)
+                    .tag(idx + videoOffset)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .automatic))
@@ -289,15 +319,18 @@ public struct NativeCourseReaderView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 if let ch = currentChapter {
-                    AcademyBadge("Chapitre \(ch.id) · \(ch.title)", icon: AcademyIcons.sfSymbol(for: ch.icon), style: .pine)
+                    AcademyBadge("Chapitre \(ch.id) · \(AcademyRichTextParser.plainText(ch.title))", icon: AcademyIcons.sfSymbol(for: ch.icon), style: .pine)
                 }
                 Spacer()
+                if activePageVideo != nil {
+                    AcademyBadge("Vidéo", icon: "play.rectangle.fill", style: .copper)
+                }
                 Label(part.duration, systemImage: "clock")
                     .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(AcademyPalette.inkSecondary)
             }
 
-            Text(part.title)
+            Text(AcademyRichTextParser.plainText(part.title))
                 .font(.system(size: 22, weight: .black, design: .rounded))
                 .foregroundStyle(AcademyPalette.ink)
 
@@ -350,7 +383,7 @@ public struct NativeCourseReaderView: View {
                             Text("ENVIE D'APPROFONDIR ? · 5 PALIERS PROGRESSIFS")
                                 .font(.system(size: 10, weight: .heavy, design: .rounded))
                                 .foregroundStyle(AcademyPalette.pine)
-                            Text(dive.title)
+                            Text(AcademyRichTextParser.plainText(dive.title))
                                 .font(.system(size: 14.5, weight: .heavy, design: .rounded))
                                 .foregroundStyle(AcademyPalette.ink)
                                 .multilineTextAlignment(.leading)
@@ -431,7 +464,7 @@ public struct NativeCourseReaderView: View {
                             reexplainItem(
                                 badge: "Résumé limpide de cette page",
                                 text: part.summary.isEmpty
-                                    ? "Retenez simplement l'idée centrale de « \(part.title) » : chaque outil Cenelis est conçu pour vous guider sans stress et protéger vos actions."
+                                    ? "Retenez simplement l'idée centrale de « \(AcademyRichTextParser.plainText(part.title)) » : chaque outil Cenelis est conçu pour vous guider sans stress et protéger vos actions."
                                     : AcademyRichTextParser.plainText(part.summary)
                             )
                         }
@@ -525,6 +558,10 @@ public struct NativeBlockRendererView: View {
 
     public var body: some View {
         switch block.type {
+        case "video_capsule":
+            if let vid = block.video {
+                AcademyVideoCapsuleCard(video: vid, vm: vm)
+            }
         case "visual_scene":
             if let sceneId = block.scene, !sceneId.isEmpty {
                 NativeVisualSceneView(sceneId: sceneId)
@@ -625,11 +662,16 @@ public struct NativeBlockRendererView: View {
     // 3. Bloc Visual Flow (Étapes Illustrées)
     private var visualFlowCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let title = block.title, !title.isEmpty {
+            if let title = block.heading ?? block.title, !title.isEmpty {
                 AcademyBadge("Parcours visuel étape par étape", icon: "point.topleft.down.to.point.bottomright.curvepath.fill", style: .pine)
                 Text(AcademyRichTextParser.plainText(title))
                     .font(.system(size: 17, weight: .heavy, design: .rounded))
                     .foregroundStyle(AcademyPalette.ink)
+            }
+            if let intro = block.intro, !intro.isEmpty {
+                RichBubbleTextView(intro, fontSize: 14) { key, label in
+                    vm.openBubble(key: key, fallbackLabel: label)
+                }
             }
 
             ForEach(Array(block.steps.enumerated()), id: \.offset) { idx, step in
@@ -861,10 +903,15 @@ public struct NativeBlockRendererView: View {
     // 5. Bloc Repères / Contrats / Termes Clés
     private var termsGridCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let title = block.title, !title.isEmpty {
+            if let title = block.heading ?? block.title, !title.isEmpty {
                 Text(AcademyRichTextParser.plainText(title))
                     .font(.system(size: 16.5, weight: .heavy, design: .rounded))
                     .foregroundStyle(AcademyPalette.ink)
+            }
+            if let intro = block.intro, !intro.isEmpty {
+                RichBubbleTextView(intro, fontSize: 14) { key, label in
+                    vm.openBubble(key: key, fallbackLabel: label)
+                }
             }
             ForEach(block.termItems) { item in
                 VStack(alignment: .leading, spacing: 5) {
@@ -901,11 +948,16 @@ public struct NativeBlockRendererView: View {
     // 6. Bloc Mises en Situation & Scénarios Concrets
     private var scenariosListCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let title = block.title, !title.isEmpty {
+            if let title = block.heading ?? block.title, !title.isEmpty {
                 AcademyBadge("Mises en situation concrètes", icon: "person.2.wave.2.fill", style: .copper)
                 Text(AcademyRichTextParser.plainText(title))
                     .font(.system(size: 16.5, weight: .heavy, design: .rounded))
                     .foregroundStyle(AcademyPalette.ink)
+            }
+            if let intro = block.intro, !intro.isEmpty {
+                RichBubbleTextView(intro, fontSize: 14) { key, label in
+                    vm.openBubble(key: key, fallbackLabel: label)
+                }
             }
 
             ForEach(block.scenarioItems) { sc in
@@ -946,21 +998,26 @@ public struct NativeBlockRendererView: View {
     // 7. Bloc Tableau Comparatif Responsive
     private var nativeTableCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let title = block.title, !title.isEmpty {
+            if let title = block.heading ?? block.title, !title.isEmpty {
                 Text(AcademyRichTextParser.plainText(title))
                     .font(.system(size: 16, weight: .heavy, design: .rounded))
                     .foregroundStyle(AcademyPalette.ink)
+            }
+            if let intro = block.intro, !intro.isEmpty {
+                RichBubbleTextView(intro, fontSize: 14) { key, label in
+                    vm.openBubble(key: key, fallbackLabel: label)
+                }
             }
 
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     if !block.headers.isEmpty {
                         HStack(spacing: 0) {
-                            ForEach(Array(block.headers.enumerated()), id: \.offset) { _, h in
+                            ForEach(Array(block.headers.enumerated()), id: \.offset) { cIdx, h in
                                 Text(AcademyRichTextParser.plainText(h))
                                     .font(.system(size: 12, weight: .heavy, design: .rounded))
                                     .foregroundStyle(.white)
-                                    .frame(width: 155, alignment: .leading)
+                                    .frame(width: cIdx == 0 ? 155 : 210, alignment: .leading)
                                     .padding(10)
                             }
                         }
@@ -970,11 +1027,11 @@ public struct NativeBlockRendererView: View {
                     ForEach(Array(block.rows.enumerated()), id: \.offset) { rIdx, row in
                         HStack(alignment: .top, spacing: 0) {
                             ForEach(Array(row.enumerated()), id: \.offset) { cIdx, cell in
-                                Text(AcademyRichTextParser.plainText(cell))
-                                    .font(.system(size: 12.5, weight: cIdx == 0 ? .bold : .regular))
-                                    .foregroundStyle(AcademyPalette.ink)
-                                    .frame(width: 155, alignment: .leading)
-                                    .padding(10)
+                                RichBubbleTextView(cIdx == 0 ? "**\(AcademyRichTextParser.plainText(cell))**" : cell, fontSize: 12.5, lineSpacing: 2.5) { key, label in
+                                    vm.openBubble(key: key, fallbackLabel: label)
+                                }
+                                .frame(width: cIdx == 0 ? 155 : 210, alignment: .leading)
+                                .padding(10)
                             }
                         }
                         .background(rIdx % 2 == 0 ? AcademyPalette.surface : AcademyPalette.surfaceSubtle)
@@ -996,10 +1053,15 @@ public struct NativeBlockRendererView: View {
     private var uiButtonsDictionaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             AcademyBadge("Boutons & commandes expliqués un par un", icon: "cursorarrow.click.2", style: .pine)
-            if let title = block.title, !title.isEmpty {
+            if let title = block.heading ?? block.title, !title.isEmpty {
                 Text(AcademyRichTextParser.plainText(title))
                     .font(.system(size: 16.5, weight: .heavy, design: .rounded))
                     .foregroundStyle(AcademyPalette.ink)
+            }
+            if let intro = block.intro, !intro.isEmpty {
+                RichBubbleTextView(intro, fontSize: 14) { key, label in
+                    vm.openBubble(key: key, fallbackLabel: label)
+                }
             }
 
             ForEach(block.uiButtonItems) { btn in
@@ -1085,12 +1147,13 @@ public struct CourseTocSheet: View {
 
                 if !course.chapters.isEmpty {
                     ForEach(course.chapters) { chapter in
-                        Section("Chapitre \(chapter.id) · \(chapter.title)") {
+                        let chTitle = AcademyRichTextParser.plainText(chapter.title)
+                        Section(chapter.video != nil ? "Chapitre \(chapter.id) · \(chTitle) · 🎬 Vidéo" : "Chapitre \(chapter.id) · \(chTitle)") {
                             let lower = max(0, chapter.startIndex)
                             let upper = min(course.parts.count - 1, chapter.endIndex)
                             if lower <= upper {
                                 ForEach(lower...upper, id: \.self) { idx in
-                                    partRow(index: idx)
+                                    partRow(index: idx, hasChapterVideo: chapter.video != nil && idx == lower)
                                 }
                             }
                         }
@@ -1098,7 +1161,7 @@ public struct CourseTocSheet: View {
                 } else {
                     Section("Pages du parcours") {
                         ForEach(Array(course.parts.indices), id: \.self) { idx in
-                            partRow(index: idx)
+                            partRow(index: idx, hasChapterVideo: false)
                         }
                     }
                 }
@@ -1139,11 +1202,12 @@ public struct CourseTocSheet: View {
         }
     }
 
-    private func partRow(index: Int) -> some View {
+    private func partRow(index: Int, hasChapterVideo: Bool) -> some View {
         let part = course.parts[index]
         let isDone = vm.isPartCompleted(part.id)
         let isCurrent = (vm.activeStepIndex == index)
         let isUnclear = vm.isPartMarkedUnclear(part.id)
+        let hasVideo = (part.video != nil) || hasChapterVideo
 
         return Button {
             vm.setStepIndex(index, for: course)
@@ -1154,12 +1218,19 @@ public struct CourseTocSheet: View {
                     .foregroundStyle(isDone ? AcademyPalette.success : (isCurrent ? AcademyPalette.pine : AcademyPalette.inkMuted))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(index + 1). \(part.title)")
+                    Text("\(index + 1). \(AcademyRichTextParser.plainText(part.title))")
                         .font(.system(size: 13.5, weight: isCurrent ? .heavy : .semibold, design: .rounded))
                         .foregroundStyle(isCurrent ? AcademyPalette.pine : AcademyPalette.ink)
-                    Text(part.duration)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(AcademyPalette.inkMuted)
+                    HStack(spacing: 6) {
+                        Text(part.duration)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(AcademyPalette.inkMuted)
+                        if hasVideo {
+                            Label("Capsule vidéo", systemImage: "play.rectangle.fill")
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(AcademyPalette.copper)
+                        }
+                    }
                 }
                 Spacer()
                 if isUnclear {

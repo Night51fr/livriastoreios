@@ -19,6 +19,8 @@ Application mobile officielle **100 % native SwiftUI (Swift 6.0 · iOS 18+)** du
   - Double mode de lecture (**Lecture Fluide** éditoriale ou **Cartes Focus** glissables bloc par bloc).
   - Bulles inline `{{clé|libellé}}` cliquables directement dans le texte + puces rapides sous chaque paragraphe.
   - Bascule instantanée **Captures Mobile `@2x` / Ordinateur `@2x`** avec repères numérotés interactifs et Lightbox plein écran zoomable.
+  - **Capsules Vidéo Explicatives Motion Design (`AVKit` natif)** intégrées directement dans les chapitres et pages clés (26 capsules parlées en français avec sous-titres synchronisés temps réel, vitesses `0.75x` à `2x`, plein écran, transcription écrite complète et récompense `+30 XP` synchronisée sur le compte).
+  - **Catalogue complet incluant le Cours 05 Viple SysGRC** (CRM, Devis CPQ, Facturation PDF, Support SLA P1–P4, Portail `/admin` & Master Control) et déconnexion globale SSO Viple Live ID (`logout.srf`).
   - Évaluation finale à 4 volets : seuil officiel **80 % « Apte à rejoindre Cenelis »** puis rattrapage personnalisé lacune par lacune jusqu'à **100 %**.
 - **Progression, Points XP, Série Quotidienne, 12 Trophées & 5 Mini-Jeux Natifs** :
   1. *Swipe Éclair : Vrai ou Piège ?*

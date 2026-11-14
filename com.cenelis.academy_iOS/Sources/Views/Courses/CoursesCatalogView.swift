@@ -7,7 +7,7 @@ public struct CoursesCatalogView: View {
 
     public enum CourseFilter: String, CaseIterable, Identifiable {
         case all = "Tous les cours"
-        case flagship = "Grands Parcours (72p)"
+        case flagship = "Grands Parcours"
         case thematic = "Modules Thématiques"
         case clientGuides = "Guides Espace Client"
 
@@ -27,9 +27,9 @@ public struct CoursesCatalogView: View {
         case .all:
             base = vm.catalog.courses
         case .flagship:
-            base = vm.visibleHomeCourses.filter { $0.parts.count >= 30 || $0.isFlagshipOnboarding }
+            base = vm.visibleHomeCourses.filter { $0.parts.count >= 16 || $0.isFlagshipOnboarding }
         case .thematic:
-            base = vm.visibleHomeCourses.filter { $0.parts.count < 30 && !$0.isFlagshipOnboarding }
+            base = vm.visibleHomeCourses.filter { $0.parts.count < 16 && !$0.isFlagshipOnboarding }
         case .clientGuides:
             base = vm.customerGuideCourses
         }
@@ -98,7 +98,7 @@ public struct CoursesCatalogView: View {
                     // Section Approfondissements 5 paliers
                     if filter == .all && searchText.isEmpty && !vm.catalog.deepDives.isEmpty {
                         Divider().padding(.vertical, 4)
-                        Text("9 Dossiers d'Approfondissement (5 Paliers)")
+                        Text("\(vm.catalog.deepDives.count) Dossiers d'Approfondissement (5 Paliers)")
                             .font(.system(size: 18, weight: .black, design: .rounded))
 
                         ForEach(vm.catalog.deepDives) { dive in
@@ -114,7 +114,7 @@ public struct CoursesCatalogView: View {
                                         .background(RoundedRectangle(cornerRadius: 12).fill(AcademyPalette.pineSoft))
 
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(dive.title)
+                                        Text(AcademyRichTextParser.plainText(dive.title))
                                             .font(.system(size: 14.5, weight: .heavy, design: .rounded))
                                             .foregroundStyle(AcademyPalette.ink)
                                             .multilineTextAlignment(.leading)

@@ -81,14 +81,20 @@ public struct RichBubbleTextView: View {
 
         for token in tokens {
             switch token {
-            case let .text(_, content, isBold, isCode):
+            case let .text(_, content, isBold, isCode, isItalic):
                 var part = AttributedString(content)
                 if isCode {
-                    part.font = .system(size: fontSize - 1, weight: .bold, design: .monospaced)
+                    part.font = .system(size: max(11, fontSize - 1), weight: .bold, design: .monospaced)
                     part.foregroundColor = AcademyPalette.pine
                     part.backgroundColor = AcademyPalette.pineSoft
+                } else if isBold && isItalic {
+                    part.font = .system(size: fontSize, weight: .bold).italic()
+                    part.foregroundColor = AcademyPalette.ink
                 } else if isBold {
                     part.font = .system(size: fontSize, weight: .bold)
+                    part.foregroundColor = AcademyPalette.ink
+                } else if isItalic {
+                    part.font = .system(size: fontSize, weight: .regular).italic()
                     part.foregroundColor = AcademyPalette.ink
                 } else {
                     part.font = .system(size: fontSize, weight: .regular)
@@ -261,10 +267,10 @@ public struct DeepDiveReaderSheet: View {
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(AcademyPalette.inkSecondary)
                         }
-                        Text(dive.title)
+                        Text(AcademyRichTextParser.plainText(dive.title))
                             .font(.system(size: 22, weight: .black, design: .rounded))
                             .foregroundStyle(AcademyPalette.ink)
-                        Text(dive.subtitle)
+                        Text(AcademyRichTextParser.plainText(dive.subtitle))
                             .font(.system(size: 14))
                             .foregroundStyle(AcademyPalette.inkSecondary)
                     }
@@ -308,11 +314,11 @@ public struct DeepDiveReaderSheet: View {
 
                     if let levelData = currentObj {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Palier \(levelData.level) · \(levelData.title)")
+                            Text("Palier \(levelData.level) · \(AcademyRichTextParser.plainText(levelData.title))")
                                 .font(.system(size: 19, weight: .heavy, design: .rounded))
                                 .foregroundStyle(AcademyPalette.pine)
 
-                            Text(levelData.summary)
+                            Text(AcademyRichTextParser.plainText(levelData.summary))
                                 .font(.system(size: 14.5, weight: .semibold))
                                 .foregroundStyle(AcademyPalette.inkSecondary)
 
@@ -344,10 +350,10 @@ public struct DeepDiveReaderSheet: View {
 
                                     ForEach(levelData.unlockedWords) { w in
                                         VStack(alignment: .leading, spacing: 3) {
-                                            Text(w.word)
+                                            Text(AcademyRichTextParser.plainText(w.word))
                                                 .font(.system(size: 13.5, weight: .heavy, design: .rounded))
                                                 .foregroundStyle(AcademyPalette.ink)
-                                            Text(w.def)
+                                            Text(AcademyRichTextParser.plainText(w.def))
                                                 .font(.system(size: 13))
                                                 .foregroundStyle(AcademyPalette.inkSecondary)
                                         }
@@ -620,7 +626,7 @@ public struct GlobalSearchSheet: View {
                         // Suggestions rapides
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(["Cenelis Connect", "Wingman", "Loi Lang", "Zéro Fibre", "Modération", "Opt-in"], id: \.self) { sug in
+                                ForEach(["SysGRC", "Cenelis Connect", "Wingman", "Loi Lang", "Zéro Fibre", "Modération", "Opt-in"], id: \.self) { sug in
                                     Button(sug) {
                                         AcademyHaptics.selection()
                                         query = sug
@@ -659,10 +665,10 @@ public struct GlobalSearchSheet: View {
                                     Text(item.kind.uppercased())
                                         .font(.system(size: 10, weight: .heavy, design: .rounded))
                                         .foregroundStyle(AcademyPalette.copper)
-                                    Text(item.title)
+                                    Text(AcademyRichTextParser.plainText(item.title))
                                         .font(.system(size: 14.5, weight: .heavy, design: .rounded))
                                         .foregroundStyle(AcademyPalette.ink)
-                                    Text(item.snippet)
+                                    Text(AcademyRichTextParser.plainText(item.snippet))
                                         .font(.system(size: 12.5))
                                         .foregroundStyle(AcademyPalette.inkSecondary)
                                         .lineLimit(2)

@@ -472,7 +472,7 @@ public struct CourseEvaluationView: View {
                             .foregroundStyle(AcademyPalette.success)
                         }
 
-                        Text(part.title)
+                        Text(AcademyRichTextParser.plainText(part.title))
                             .font(.system(size: 15.5, weight: .heavy, design: .rounded))
 
                         if let rx = part.reexplain {
@@ -504,7 +504,7 @@ public struct CourseEvaluationView: View {
                             HStack {
                                 Image(systemName: marked ? "checkmark.square.fill" : "square")
                                     .foregroundStyle(marked ? AcademyPalette.copper : AcademyPalette.inkMuted)
-                                Text("\(idx + 1). \(part.title)")
+                                Text("\(idx + 1). \(AcademyRichTextParser.plainText(part.title))")
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(AcademyPalette.ink)
                                     .lineLimit(1)
@@ -548,11 +548,11 @@ public struct CourseEvaluationView: View {
                             centerText: "\(doneCount)/\(dive.levels.count)"
                         )
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(dive.title)
+                            Text(AcademyRichTextParser.plainText(dive.title))
                                 .font(.system(size: 14.5, weight: .heavy, design: .rounded))
                                 .foregroundStyle(AcademyPalette.ink)
                                 .multilineTextAlignment(.leading)
-                            Text(dive.subtitle)
+                            Text(AcademyRichTextParser.plainText(dive.subtitle))
                                 .font(.system(size: 12))
                                 .foregroundStyle(AcademyPalette.inkSecondary)
                                 .lineLimit(2)

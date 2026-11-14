@@ -246,9 +246,14 @@ public struct ResourcesEncyclopediaView: View {
     private func interactiveSopScenarioBlock(_ block: AcademyBlock, tabId: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             AcademyBadge("Checklist terrain interactive (+5 XP / étape)", icon: "checklist", style: .pine)
-            if let title = block.title {
+            if let title = block.heading ?? block.title, !title.isEmpty {
                 Text(AcademyRichTextParser.plainText(title))
                     .font(.system(size: 17, weight: .heavy, design: .rounded))
+            }
+            if let intro = block.intro, !intro.isEmpty {
+                RichBubbleTextView(intro, fontSize: 14) { key, label in
+                    vm.openBubble(key: key, fallbackLabel: label)
+                }
             }
 
             ForEach(block.scenarioItems) { sc in

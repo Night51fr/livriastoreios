@@ -109,7 +109,7 @@ public struct HomeHubView: View {
                     Text(donePages == 0 ? "COMMENCER MON PARCOURS" : "REPRENDRE MA LECTURE")
                         .font(.system(size: 10.5, weight: .heavy, design: .rounded))
                         .foregroundStyle(AcademyPalette.copper)
-                    Text(course.title)
+                    Text(AcademyRichTextParser.plainText(course.title))
                         .font(.system(size: 15, weight: .black, design: .rounded))
                         .foregroundStyle(AcademyPalette.ink)
                         .lineLimit(2)
@@ -287,12 +287,12 @@ public struct HomeHubView: View {
                                     Spacer()
                                     AcademyBadge("\(done)/\(dive.levels.count)", style: done == dive.levels.count ? .success : .pine)
                                 }
-                                Text(dive.title)
+                                Text(AcademyRichTextParser.plainText(dive.title))
                                     .font(.system(size: 14, weight: .heavy, design: .rounded))
                                     .foregroundStyle(AcademyPalette.ink)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
-                                Text(dive.subtitle)
+                                Text(AcademyRichTextParser.plainText(dive.subtitle))
                                     .font(.system(size: 12))
                                     .foregroundStyle(AcademyPalette.inkSecondary)
                                     .lineLimit(2)
@@ -325,10 +325,25 @@ public struct CourseSummaryRowCard: View {
         self.vm = vm
     }
 
+    private var videoCapsulesCount: Int {
+        var ids = Set<String>()
+        for ch in course.chapters {
+            if let v = ch.video { ids.insert(v.id) }
+        }
+        for part in course.parts {
+            if let v = part.video { ids.insert(v.id) }
+            for b in part.blocks {
+                if let v = b.video { ids.insert(v.id) }
+            }
+        }
+        return ids.count
+    }
+
     public var body: some View {
         let donePages = vm.completedPartsCount(for: course)
         let certified = vm.isCourseCertified(course)
         let quizPct = vm.courseConsolidatedPct(course)
+        let vidCount = videoCapsulesCount
 
         Button {
             vm.openCourse(course.id)
@@ -347,17 +362,20 @@ public struct CourseSummaryRowCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             AcademyBadge(course.number, style: course.isFlagshipOnboarding ? .copper : .pine)
+                            if vidCount > 0 {
+                                AcademyBadge("\(vidCount) vidéo\(vidCount > 1 ? "s" : "")", icon: "play.rectangle.fill", style: .copper)
+                            }
                             if certified {
                                 AcademyBadge("Apte \(quizPct)%", icon: "checkmark.seal.fill", style: .success)
                             }
                         }
 
-                        Text(course.title)
+                        Text(AcademyRichTextParser.plainText(course.title))
                             .font(.system(size: 16, weight: .black, design: .rounded))
                             .foregroundStyle(AcademyPalette.ink)
                             .multilineTextAlignment(.leading)
 
-                        Text(course.subtitle)
+                        Text(AcademyRichTextParser.plainText(course.subtitle))
                             .font(.system(size: 12.5))
                             .foregroundStyle(AcademyPalette.inkSecondary)
                             .lineLimit(2)

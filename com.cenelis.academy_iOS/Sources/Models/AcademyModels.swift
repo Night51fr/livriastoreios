@@ -173,16 +173,108 @@ public struct AcademyRoleShortcut: Codable, Identifiable, Sendable {
     }
 }
 
+public struct AcademyVideoCue: Codable, Identifiable, Sendable, Equatable {
+    public var id: String { "\(start)-\(end)" }
+    public var start: Double
+    public var end: Double
+    public var text: String
+
+    enum CodingKeys: String, CodingKey { case start, end, text }
+
+    public init(start: Double, end: Double, text: String) {
+        self.start = start
+        self.end = end
+        self.text = text
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.start = (try? c.decode(Double.self, forKey: .start)) ?? 0
+        self.end = (try? c.decode(Double.self, forKey: .end)) ?? 0
+        self.text = (try? c.decode(String.self, forKey: .text)) ?? ""
+    }
+}
+
+public struct AcademyVideoCapsule: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var title: String
+    public var subtitle: String
+    public var badge: String
+    public var durationSeconds: Int
+    public var durationLabel: String
+    public var url: String
+    public var posterUrl: String?
+    public var captionsVttUrl: String?
+    public var transcript: String
+    public var keyTakeaways: [String]
+    public var cues: [AcademyVideoCue]
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, subtitle, badge, durationSeconds, durationLabel
+        case url, posterUrl, captionsVttUrl, transcript, keyTakeaways, cues
+    }
+
+    public init(
+        id: String,
+        title: String,
+        subtitle: String = "",
+        badge: String = "Capsule vidéo explicative",
+        durationSeconds: Int = 45,
+        durationLabel: String = "0:45",
+        url: String,
+        posterUrl: String? = nil,
+        captionsVttUrl: String? = nil,
+        transcript: String = "",
+        keyTakeaways: [String] = [],
+        cues: [AcademyVideoCue] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.badge = badge
+        self.durationSeconds = durationSeconds
+        self.durationLabel = durationLabel
+        self.url = url
+        self.posterUrl = posterUrl
+        self.captionsVttUrl = captionsVttUrl
+        self.transcript = transcript
+        self.keyTakeaways = keyTakeaways
+        self.cues = cues
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        self.title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        self.subtitle = (try? c.decode(String.self, forKey: .subtitle)) ?? ""
+        self.badge = (try? c.decode(String.self, forKey: .badge)) ?? "Capsule vidéo explicative"
+        let secs = (try? c.decode(Int.self, forKey: .durationSeconds)) ?? 45
+        self.durationSeconds = secs
+        if let lbl = try? c.decode(String.self, forKey: .durationLabel), !lbl.isEmpty {
+            self.durationLabel = lbl
+        } else {
+            self.durationLabel = String(format: "%d:%02d", secs / 60, secs % 60)
+        }
+        self.url = (try? c.decode(String.self, forKey: .url)) ?? ""
+        self.posterUrl = try? c.decode(String.self, forKey: .posterUrl)
+        self.captionsVttUrl = try? c.decode(String.self, forKey: .captionsVttUrl)
+        self.transcript = (try? c.decode(String.self, forKey: .transcript)) ?? ""
+        self.keyTakeaways = (try? c.decode([String].self, forKey: .keyTakeaways)) ?? []
+        self.cues = (try? c.decode([AcademyVideoCue].self, forKey: .cues)) ?? []
+    }
+}
+
 public struct AcademyChapter: Codable, Identifiable, Sendable {
     public var id: Int
     public var title: String
     public var range: [Int]
     public var icon: String
+    public var video: AcademyVideoCapsule?
 
     public var startIndex: Int { range.first ?? 0 }
     public var endIndex: Int { range.count > 1 ? range[1] : startIndex }
 
-    enum CodingKeys: String, CodingKey { case id, title, range, icon }
+    enum CodingKeys: String, CodingKey { case id, title, range, icon, video }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -190,6 +282,7 @@ public struct AcademyChapter: Codable, Identifiable, Sendable {
         self.title = (try? c.decode(String.self, forKey: .title)) ?? ""
         self.range = (try? c.decode([Int].self, forKey: .range)) ?? [0, 0]
         self.icon = (try? c.decode(String.self, forKey: .icon)) ?? "bookOpen"
+        self.video = try? c.decode(AcademyVideoCapsule.self, forKey: .video)
     }
 }
 
@@ -202,9 +295,10 @@ public struct AcademyPart: Codable, Identifiable, Sendable {
     public var deepDiveId: String?
     public var blocks: [AcademyBlock]
     public var reexplain: AcademyReexplain?
+    public var video: AcademyVideoCapsule?
 
     enum CodingKeys: String, CodingKey {
-        case id, chapter, title, duration, summary, deepDiveId, blocks, reexplain
+        case id, chapter, title, duration, summary, deepDiveId, blocks, reexplain, video
     }
 
     public init(from decoder: Decoder) throws {
@@ -217,6 +311,7 @@ public struct AcademyPart: Codable, Identifiable, Sendable {
         self.deepDiveId = try? c.decode(String.self, forKey: .deepDiveId)
         self.blocks = (try? c.decode([AcademyBlock].self, forKey: .blocks)) ?? []
         self.reexplain = try? c.decode(AcademyReexplain.self, forKey: .reexplain)
+        self.video = try? c.decode(AcademyVideoCapsule.self, forKey: .video)
     }
 }
 
@@ -268,14 +363,15 @@ public struct AcademyBlock: Codable, Identifiable, Sendable {
     public var scenarioItems: [AcademyScenarioItem]
     public var uiButtonItems: [AcademyUIButtonItem]
 
-    // Tableaux
+    // Tableaux & Vidéo
     public var headers: [String]
     public var rows: [[String]]
+    public var video: AcademyVideoCapsule?
 
     enum CodingKeys: String, CodingKey {
         case type, icon, heading, title, intro, text, variant, scene, paragraphs, steps
         case src, mobileSrc, url, caption, crop, noMobilePair, device, pins, points
-        case items, headers, rows
+        case items, headers, rows, video
     }
 
     public init(from decoder: Decoder) throws {
@@ -304,6 +400,7 @@ public struct AcademyBlock: Codable, Identifiable, Sendable {
 
         self.headers = (try? c.decode([String].self, forKey: .headers)) ?? []
         self.rows = (try? c.decode([[String]].self, forKey: .rows)) ?? []
+        self.video = try? c.decode(AcademyVideoCapsule.self, forKey: .video)
 
         switch decodedType {
         case "terms":
@@ -351,6 +448,7 @@ public struct AcademyBlock: Codable, Identifiable, Sendable {
         if !points.isEmpty { try c.encode(points, forKey: .points) }
         if !headers.isEmpty { try c.encode(headers, forKey: .headers) }
         if !rows.isEmpty { try c.encode(rows, forKey: .rows) }
+        try c.encodeIfPresent(video, forKey: .video)
         switch type {
         case "terms": try c.encode(termItems, forKey: .items)
         case "scenarios": try c.encode(scenarioItems, forKey: .items)
@@ -733,131 +831,256 @@ public struct AcademyGlossaryEntry: Codable, Identifiable, Sendable {
     }
 }
 
-// MARK: - Parseur de Texte Enrichi & Bulles Interactives {{cle|libelle}} + Balises HTML Inline
+// MARK: - Parseur de Texte Enrichi & Bulles Interactives {{cle|libelle}} + Markdown + Balises HTML Inline
 
 public enum AcademyInlineToken: Identifiable, Sendable {
-    case text(id: Int, content: String, isBold: Bool, isCode: Bool)
+    case text(id: Int, content: String, isBold: Bool, isCode: Bool, isItalic: Bool = false)
     case bubble(id: Int, key: String, label: String)
 
     public var id: Int {
         switch self {
-        case .text(let id, _, _, _): return id
+        case .text(let id, _, _, _, _): return id
         case .bubble(let id, _, _): return id
         }
     }
 }
 
 public enum AcademyRichTextParser {
-    /// Nettoie les entités HTML et balises pour un affichage brut propre (cartes, tableaux, recherche).
+    private static let htmlBreakRegex = try? NSRegularExpression(pattern: #"<br\s*/?>"#, options: [.caseInsensitive])
+    private static let htmlLiOpenRegex = try? NSRegularExpression(pattern: #"<li(?:\s+[^>]*)?>"#, options: [.caseInsensitive])
+    private static let htmlLiCloseRegex = try? NSRegularExpression(pattern: #"</li>"#, options: [.caseInsensitive])
+    private static let htmlRealTagRegex = try? NSRegularExpression(pattern: #"</?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*)?>"#, options: [])
+    private static let bubbleRegex = try? NSRegularExpression(pattern: #"\{\{([^|}]+)\|([^}]+)\}\}"#, options: [])
+    private static let codeTickRegex = try? NSRegularExpression(pattern: #"`([^`]+)`"#, options: [])
+    private static let boldMdRegex = try? NSRegularExpression(pattern: #"\*\*([\s\S]+?)\*\*"#, options: [])
+    private static let italicMdRegex = try? NSRegularExpression(pattern: #"(?<![\p{L}\p{N}*])\*(?![\s.*])([^*\n]+?)(?<![\s*])\*(?![\p{L}\p{N}.*])"#, options: [])
+    private static let decEntityRegex = try? NSRegularExpression(pattern: #"&#(\d{1,7});"#, options: [])
+    private static let hexEntityRegex = try? NSRegularExpression(pattern: #"&#[xX]([0-9a-fA-F]{1,6});"#, options: [])
+
+    private static let inlineTokenRegex = try? NSRegularExpression(
+        pattern: #"\{\{([^|}]+)\|([^}]+)\}\}|`([^`]+)`|<code(?:\s+[^>]*)?>([\s\S]*?)</code>|<span\s+class=['"]ca-mono['"][^>]*>([\s\S]*?)</span>|\*\*([\s\S]+?)\*\*|<(?:strong|b)(?:\s+[^>]*)?>([\s\S]*?)</(?:strong|b)>|<(?:em|i)(?:\s+[^>]*)?>([\s\S]*?)</(?:em|i)>|(?<![\p{L}\p{N}*])\*(?![\s.*])([^*\n]+?)(?<![\s*])\*(?![\p{L}\p{N}.*])"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Nettoie intégralement le Markdown, les bulles `{{key|label}}`, les vraies balises HTML et les entités pour un affichage brut propre (titres, cartes, sommaires, quiz, recherche).
     public static func plainText(_ raw: String) -> String {
         if raw.isEmpty { return "" }
-        var s = raw
-            .replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
+        var s = normalizeHtmlBreaks(raw)
 
-        // Convertir {{key|label}} -> label
-        let bubblePattern = #"\{\{([^|}]+)\|([^}]+)\}\}"#
-        if let regex = try? NSRegularExpression(pattern: bubblePattern) {
-            let ns = s as NSString
-            let matches = regex.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed()
-            for m in matches where m.numberOfRanges >= 3 {
-                let label = ns.substring(with: m.range(at: 2))
-                s = (s as NSString).replacingCharacters(in: m.range, with: label)
+        // 1. Supprimer les vraies balises HTML AVANT de décoder &lt; / &gt; (préserve les chevrons techniques légitimes)
+        s = stripRealHtmlTags(s)
+
+        // 2. Convertir {{key|label}} -> label
+        if let regex = bubbleRegex {
+            for _ in 0..<3 {
+                let ns = s as NSString
+                let matches = regex.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed()
+                if matches.isEmpty { break }
+                for m in matches where m.numberOfRanges >= 3 {
+                    let label = ns.substring(with: m.range(at: 2))
+                    s = (s as NSString).replacingCharacters(in: m.range, with: label)
+                }
             }
         }
 
-        // Supprimer les balises HTML restantes
-        if let tagRegex = try? NSRegularExpression(pattern: #"<[^>]+>"#) {
-            s = tagRegex.stringByReplacingMatches(in: s, range: NSRange(location: 0, length: (s as NSString).length), withTemplate: "")
+        // 3. Supprimer les backticks `code` -> code
+        if let regex = codeTickRegex {
+            s = regex.stringByReplacingMatches(in: s, range: NSRange(location: 0, length: (s as NSString).length), withTemplate: "$1")
+        }
+
+        // 4. Supprimer le gras **texte** -> texte (y compris imbriqué)
+        if let regex = boldMdRegex {
+            for _ in 0..<2 {
+                let len = (s as NSString).length
+                let next = regex.stringByReplacingMatches(in: s, range: NSRange(location: 0, length: len), withTemplate: "$1")
+                if next == s { break }
+                s = next
+            }
+        }
+
+        // 5. Supprimer l'italique *texte* sans jamais altérer *.prod.cenelis.com
+        if let regex = italicMdRegex {
+            s = regex.stringByReplacingMatches(in: s, range: NSRange(location: 0, length: (s as NSString).length), withTemplate: "$1")
         }
 
         return decodeEntities(s)
     }
 
-    /// Découpe un paragraphe en segments texte / gras / code / bulles interactives `{{key|label}}`.
+    /// Découpe récursivement un texte en segments texte / gras / italique / code / bulles interactives `{{key|label}}` (gère les imbrications `**... {{key|label}} ...**` et `**... \`code\` ...**`).
     public static func tokenize(_ raw: String) -> [AcademyInlineToken] {
         if raw.isEmpty { return [] }
-        let normalized = decodeEntities(
-            raw.replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
-               .replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
-               .replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
-        )
-
+        let prepared = normalizeHtmlBreaks(raw)
         var tokens: [AcademyInlineToken] = []
         var nextId = 0
+        parseSegment(prepared, bold: false, italic: false, depth: 0, nextId: &nextId, into: &tokens)
+        return tokens
+    }
 
-        let pattern = #"\{\{([^|}]+)\|([^}]+)\}\}|\*\*([^*]+)\*\*|<strong>(.*?)</strong>|<b>(.*?)</b>|<code>(.*?)</code>|<em>(.*?)</em>"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else {
-            return [.text(id: 0, content: plainText(raw), isBold: false, isCode: false)]
+    private static func parseSegment(
+        _ segment: String,
+        bold: Bool,
+        italic: Bool,
+        depth: Int,
+        nextId: inout Int,
+        into tokens: inout [AcademyInlineToken]
+    ) {
+        if segment.isEmpty { return }
+        guard depth < 6, let regex = inlineTokenRegex else {
+            let cleaned = decodeEntities(stripRealHtmlTags(segment))
+            if !cleaned.isEmpty {
+                tokens.append(.text(id: nextId, content: cleaned, isBold: bold, isCode: false, isItalic: italic))
+                nextId += 1
+            }
+            return
         }
 
-        let ns = normalized as NSString
-        var cursor = 0
-        let matches = regex.matches(in: normalized, range: NSRange(location: 0, length: ns.length))
+        let ns = segment as NSString
+        let matches = regex.matches(in: segment, range: NSRange(location: 0, length: ns.length))
+        if matches.isEmpty {
+            let cleaned = decodeEntities(stripRealHtmlTags(segment))
+            if !cleaned.isEmpty {
+                tokens.append(.text(id: nextId, content: cleaned, isBold: bold, isCode: false, isItalic: italic))
+                nextId += 1
+            }
+            return
+        }
 
+        var cursor = 0
         for m in matches {
             if m.range.location > cursor {
-                let before = stripResidualTags(ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor)))
-                if !before.isEmpty {
-                    tokens.append(.text(id: nextId, content: before, isBold: false, isCode: false))
+                let beforeRaw = ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+                let beforeClean = decodeEntities(stripRealHtmlTags(beforeRaw))
+                if !beforeClean.isEmpty {
+                    tokens.append(.text(id: nextId, content: beforeClean, isBold: bold, isCode: false, isItalic: italic))
                     nextId += 1
                 }
             }
 
             if m.range(at: 1).location != NSNotFound && m.range(at: 2).location != NSNotFound {
                 let key = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
-                let label = stripResidualTags(ns.substring(with: m.range(at: 2)))
+                let label = plainText(ns.substring(with: m.range(at: 2)))
                 tokens.append(.bubble(id: nextId, key: key, label: label))
                 nextId += 1
             } else if m.range(at: 3).location != NSNotFound {
-                tokens.append(.text(id: nextId, content: stripResidualTags(ns.substring(with: m.range(at: 3))), isBold: true, isCode: false))
-                nextId += 1
+                let codeText = decodeEntities(ns.substring(with: m.range(at: 3)))
+                if !codeText.isEmpty {
+                    tokens.append(.text(id: nextId, content: codeText, isBold: bold, isCode: true, isItalic: italic))
+                    nextId += 1
+                }
             } else if m.range(at: 4).location != NSNotFound {
-                tokens.append(.text(id: nextId, content: stripResidualTags(ns.substring(with: m.range(at: 4))), isBold: true, isCode: false))
-                nextId += 1
+                let codeText = decodeEntities(stripRealHtmlTags(ns.substring(with: m.range(at: 4))))
+                if !codeText.isEmpty {
+                    tokens.append(.text(id: nextId, content: codeText, isBold: bold, isCode: true, isItalic: italic))
+                    nextId += 1
+                }
             } else if m.range(at: 5).location != NSNotFound {
-                tokens.append(.text(id: nextId, content: stripResidualTags(ns.substring(with: m.range(at: 5))), isBold: true, isCode: false))
-                nextId += 1
+                let monoText = decodeEntities(stripRealHtmlTags(ns.substring(with: m.range(at: 5))))
+                if !monoText.isEmpty {
+                    tokens.append(.text(id: nextId, content: monoText, isBold: bold, isCode: true, isItalic: italic))
+                    nextId += 1
+                }
             } else if m.range(at: 6).location != NSNotFound {
-                tokens.append(.text(id: nextId, content: stripResidualTags(ns.substring(with: m.range(at: 6))), isBold: false, isCode: true))
-                nextId += 1
+                let inner = ns.substring(with: m.range(at: 6))
+                parseSegment(inner, bold: true, italic: italic, depth: depth + 1, nextId: &nextId, into: &tokens)
             } else if m.range(at: 7).location != NSNotFound {
-                tokens.append(.text(id: nextId, content: stripResidualTags(ns.substring(with: m.range(at: 7))), isBold: false, isCode: false))
-                nextId += 1
+                let inner = ns.substring(with: m.range(at: 7))
+                parseSegment(inner, bold: true, italic: italic, depth: depth + 1, nextId: &nextId, into: &tokens)
+            } else if m.range(at: 8).location != NSNotFound {
+                let inner = ns.substring(with: m.range(at: 8))
+                parseSegment(inner, bold: bold, italic: true, depth: depth + 1, nextId: &nextId, into: &tokens)
+            } else if m.range(at: 9).location != NSNotFound {
+                let inner = ns.substring(with: m.range(at: 9))
+                parseSegment(inner, bold: bold, italic: true, depth: depth + 1, nextId: &nextId, into: &tokens)
             }
 
             cursor = m.range.location + m.range.length
         }
 
         if cursor < ns.length {
-            let tail = stripResidualTags(ns.substring(from: cursor))
-            if !tail.isEmpty {
-                tokens.append(.text(id: nextId, content: tail, isBold: false, isCode: false))
+            let tailRaw = ns.substring(from: cursor)
+            let tailClean = decodeEntities(stripRealHtmlTags(tailRaw))
+            if !tailClean.isEmpty {
+                tokens.append(.text(id: nextId, content: tailClean, isBold: bold, isCode: false, isItalic: italic))
+                nextId += 1
             }
         }
-
-        return tokens
     }
 
-    private static func stripResidualTags(_ s: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"<[^>]+>"#) else { return s }
+    private static func normalizeHtmlBreaks(_ s: String) -> String {
+        var out = s
+        if let br = htmlBreakRegex {
+            out = br.stringByReplacingMatches(in: out, range: NSRange(location: 0, length: (out as NSString).length), withTemplate: "\n")
+        }
+        if let liOpen = htmlLiOpenRegex {
+            out = liOpen.stringByReplacingMatches(in: out, range: NSRange(location: 0, length: (out as NSString).length), withTemplate: "\n• ")
+        }
+        if let liClose = htmlLiCloseRegex {
+            out = liClose.stringByReplacingMatches(in: out, range: NSRange(location: 0, length: (out as NSString).length), withTemplate: "")
+        }
+        return out
+    }
+
+    private static func stripRealHtmlTags(_ s: String) -> String {
+        guard let regex = htmlRealTagRegex else { return s }
         return regex.stringByReplacingMatches(in: s, range: NSRange(location: 0, length: (s as NSString).length), withTemplate: "")
     }
 
     private static func decodeEntities(_ s: String) -> String {
-        s.replacingOccurrences(of: "&amp;", with: "&")
-         .replacingOccurrences(of: "&quot;", with: "\"")
-         .replacingOccurrences(of: "&#39;", with: "'")
-         .replacingOccurrences(of: "&rsquo;", with: "’")
-         .replacingOccurrences(of: "&lsquo;", with: "‘")
-         .replacingOccurrences(of: "&laquo;", with: "«")
-         .replacingOccurrences(of: "&raquo;", with: "»")
-         .replacingOccurrences(of: "&ndash;", with: "–")
-         .replacingOccurrences(of: "&mdash;", with: "—")
-         .replacingOccurrences(of: "&rarr;", with: "→")
-         .replacingOccurrences(of: "&lt;", with: "<")
-         .replacingOccurrences(of: "&gt;", with: ">")
-         .replacingOccurrences(of: "&nbsp;", with: " ")
+        if !s.contains("&") { return s }
+        var out = s
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&#x27;", with: "'", options: .caseInsensitive)
+            .replacingOccurrences(of: "&rsquo;", with: "’")
+            .replacingOccurrences(of: "&lsquo;", with: "‘")
+            .replacingOccurrences(of: "&ldquo;", with: "“")
+            .replacingOccurrences(of: "&rdquo;", with: "”")
+            .replacingOccurrences(of: "&laquo;", with: "«")
+            .replacingOccurrences(of: "&raquo;", with: "»")
+            .replacingOccurrences(of: "&ndash;", with: "–")
+            .replacingOccurrences(of: "&mdash;", with: "—")
+            .replacingOccurrences(of: "&rarr;", with: "→")
+            .replacingOccurrences(of: "&larr;", with: "←")
+            .replacingOccurrences(of: "&harr;", with: "↔")
+            .replacingOccurrences(of: "&bull;", with: "•")
+            .replacingOccurrences(of: "&middot;", with: "·")
+            .replacingOccurrences(of: "&hellip;", with: "…")
+            .replacingOccurrences(of: "&times;", with: "×")
+            .replacingOccurrences(of: "&euro;", with: "€")
+            .replacingOccurrences(of: "&copy;", with: "©")
+            .replacingOccurrences(of: "&reg;", with: "®")
+            .replacingOccurrences(of: "&ge;", with: "≥")
+            .replacingOccurrences(of: "&le;", with: "≤")
+            .replacingOccurrences(of: "&ne;", with: "≠")
+            .replacingOccurrences(of: "&plusmn;", with: "±")
+            .replacingOccurrences(of: "&deg;", with: "°")
+            .replacingOccurrences(of: "&thinsp;", with: " ")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+
+        if out.contains("&#"), let decRegex = decEntityRegex {
+            let ns = out as NSString
+            let matches = decRegex.matches(in: out, range: NSRange(location: 0, length: ns.length)).reversed()
+            for m in matches where m.numberOfRanges >= 2 {
+                if let code = UInt32(ns.substring(with: m.range(at: 1))),
+                   let scalar = UnicodeScalar(code) {
+                    out = (out as NSString).replacingCharacters(in: m.range, with: String(scalar))
+                }
+            }
+        }
+        if out.contains("&#"), let hexRegex = hexEntityRegex {
+            let ns = out as NSString
+            let matches = hexRegex.matches(in: out, range: NSRange(location: 0, length: ns.length)).reversed()
+            for m in matches where m.numberOfRanges >= 2 {
+                if let code = UInt32(ns.substring(with: m.range(at: 1)), radix: 16),
+                   let scalar = UnicodeScalar(code) {
+                    out = (out as NSString).replacingCharacters(in: m.range, with: String(scalar))
+                }
+            }
+        }
+
+        return out.replacingOccurrences(of: "&amp;", with: "&")
     }
 }

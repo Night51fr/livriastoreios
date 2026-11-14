@@ -148,6 +148,7 @@ public struct AcademyUserProgress: Codable, Sendable, Equatable {
     public var exploredBubbles: [String: Bool]
     public var bookmarkedParts: [String: Bool]
     public var checkedSopSteps: [String: Bool]
+    public var watchedVideos: [String: Double]
 
     public init(
         completedParts: [String: Double] = [:],
@@ -166,7 +167,8 @@ public struct AcademyUserProgress: Codable, Sendable, Equatable {
         miniGameRecords: [String: MiniGameScoreRecord] = [:],
         exploredBubbles: [String: Bool] = [:],
         bookmarkedParts: [String: Bool] = [:],
-        checkedSopSteps: [String: Bool] = [:]
+        checkedSopSteps: [String: Bool] = [:],
+        watchedVideos: [String: Double] = [:]
     ) {
         self.completedParts = completedParts
         self.passedQuizzes = passedQuizzes
@@ -185,12 +187,13 @@ public struct AcademyUserProgress: Codable, Sendable, Equatable {
         self.exploredBubbles = exploredBubbles
         self.bookmarkedParts = bookmarkedParts
         self.checkedSopSteps = checkedSopSteps
+        self.watchedVideos = watchedVideos
     }
 
     enum CodingKeys: String, CodingKey {
         case completedParts, passedQuizzes, lastStep, courseScores, unclearPoints, deepDives
         case xp, streakDays, lastActiveDay, streakShields, dailyGoalXP, dailyXPEarnedByDay
-        case unlockedBadges, miniGameRecords, exploredBubbles, bookmarkedParts, checkedSopSteps
+        case unlockedBadges, miniGameRecords, exploredBubbles, bookmarkedParts, checkedSopSteps, watchedVideos
     }
 
     public init(from decoder: Decoder) throws {
@@ -232,6 +235,15 @@ public struct AcademyUserProgress: Codable, Sendable, Equatable {
         self.exploredBubbles = (try? c.decode([String: Bool].self, forKey: .exploredBubbles)) ?? [:]
         self.bookmarkedParts = (try? c.decode([String: Bool].self, forKey: .bookmarkedParts)) ?? [:]
         self.checkedSopSteps = (try? c.decode([String: Bool].self, forKey: .checkedSopSteps)) ?? [:]
+        if let numVid = try? c.decode([String: Double].self, forKey: .watchedVideos) {
+            self.watchedVideos = numVid
+        } else if let boolVid = try? c.decode([String: Bool].self, forKey: .watchedVideos) {
+            var conv: [String: Double] = [:]
+            for (k, v) in boolVid where v { conv[k] = 1 }
+            self.watchedVideos = conv
+        } else {
+            self.watchedVideos = [:]
+        }
 
         // Si un apprenant vient du Web avec des pages déjà validées mais 0 XP mobile, créditer automatiquement ses acquis !
         if self.xp == 0 && (!self.completedParts.isEmpty || !self.passedQuizzes.isEmpty) {
