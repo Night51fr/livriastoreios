@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 import WebKit
 #if canImport(UIKit)
@@ -18,15 +19,17 @@ public final class PanelWebController: ObservableObject {
 
     public fileprivate(set) weak var webView: WKWebView?
     public var pendingPostLoadJavaScript: String? = nil
+    public fileprivate(set) var processTerminationRetryCount: Int = 0
 
     public init() {}
 
     public func load(url: URL, postLoadJS: String? = nil) {
         lastLoadError = nil
+        processTerminationRetryCount = 0
         pendingPostLoadJavaScript = postLoadJS
+        currentURL = url
 
         guard let wv = webView else {
-            currentURL = url
             return
         }
 
@@ -48,7 +51,26 @@ public final class PanelWebController: ObservableObject {
     public func reload() {
         WorkspaceHaptics.light()
         lastLoadError = nil
-        webView?.reload()
+        processTerminationRetryCount = 0
+        if webView?.url != nil {
+            webView?.reload()
+        } else if let target = currentURL {
+            webView?.load(URLRequest(url: target))
+        }
+    }
+
+    public func restoreDocumentVisibility() {
+        webView?.evaluateJavaScript(
+            "if (document.documentElement) { document.documentElement.style.visibility = 'visible'; } window.__ccPinRedirecting = false;",
+            completionHandler: nil
+        )
+    }
+
+    public func refreshEmbeddedAdminRbacIfAvailable() {
+        webView?.evaluateJavaScript(
+            "if (document.documentElement) { document.documentElement.style.visibility = 'visible'; } window.__ccPinRedirecting = false; if (window.VipleAdmin && typeof window.VipleAdmin.refreshRbac === 'function') { window.VipleAdmin.refreshRbac(); }",
+            completionHandler: nil
+        )
     }
 
     public func goBack() {
@@ -65,6 +87,7 @@ public final class PanelWebController: ObservableObject {
 
     public func resetStateOnLogout() {
         pendingPostLoadJavaScript = nil
+        processTerminationRetryCount = 0
         currentURL = nil
         pageTitle = ""
         isLoading = false
@@ -198,6 +221,7 @@ public struct CenelisPanelWebView: UIViewRepresentable {
             name: Self.barcodeHandlerName
         )
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.customUserAgent = WorkspaceWebSessionPool.fullURLSessionUserAgent
 
         // Ergonomie mobile 100 % native : Swipe-Back, Safe Areas, zéro barre Safari
         webView.allowsBackForwardNavigationGestures = true
@@ -247,6 +271,8 @@ public struct CenelisPanelWebView: UIViewRepresentable {
 
     @MainActor
     public final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+        private static let logger = Logger(subsystem: "com.cenelis.workspace", category: "CenelisPanelWebView")
+
         var parent: CenelisPanelWebView
         private var observations: [NSKeyValueObservation] = []
 
@@ -301,14 +327,59 @@ public struct CenelisPanelWebView: UIViewRepresentable {
 
             observations.append(webView.observe(\.url, options: [.new]) { [weak self] wv, _ in
                 Task { @MainActor in
-                    self?.parent.controller.currentURL = wv.url
+                    if let liveURL = wv.url {
+                        self?.parent.controller.currentURL = liveURL
+                    }
                 }
             })
         }
 
         @objc func handlePullToRefresh(_ sender: UIRefreshControl) {
             WorkspaceHaptics.light()
-            parent.controller.webView?.reload()
+            parent.controller.lastLoadError = nil
+            parent.controller.processTerminationRetryCount = 0
+            if parent.controller.webView?.url != nil {
+                parent.controller.webView?.reload()
+            } else if let fallback = parent.controller.currentURL ?? parent.initialURL {
+                parent.controller.webView?.load(URLRequest(url: fallback))
+            } else {
+                sender.endRefreshing()
+            }
+        }
+
+        private func restoreWebViewVisibility(_ webView: WKWebView) {
+            webView.evaluateJavaScript(
+                "if (document.documentElement) { document.documentElement.style.visibility = 'visible'; } window.__ccPinRedirecting = false;",
+                completionHandler: nil
+            )
+        }
+
+        private func resolvePinGateReturnURL(from gateURL: URL, fallbackWebViewURL: URL?) -> URL? {
+            let comps = URLComponents(url: gateURL, resolvingAgainstBaseURL: false)
+            if let retRaw = comps?.queryItems?.first(where: { $0.name == "returnUrl" })?.value,
+               let candidate = URL(string: retRaw),
+               let candHost = candidate.host?.lowercased(),
+               WorkspaceWebSessionPool.isTrustedEcosystemHost(candHost),
+               !(candHost == "sso.prod.cenelis.com" && candidate.path.lowercased().hasPrefix("/pin")) {
+                return candidate
+            }
+            if let current = fallbackWebViewURL,
+               !(current.host?.lowercased() == "sso.prod.cenelis.com" && current.path.lowercased().hasPrefix("/pin")) {
+                return current
+            }
+            return parent.controller.currentURL ?? parent.initialURL
+        }
+
+        private static func isBenignNavigationCancellation(_ error: Error) -> Bool {
+            let nsErr = error as NSError
+            if nsErr.domain == NSURLErrorDomain && nsErr.code == NSURLErrorCancelled {
+                return true
+            }
+            // WebKitErrorDomain 102 = Frame load interrupted (annulation volontaire par decidePolicyFor), 204 = Plug-in handled load
+            if nsErr.domain == "WebKitErrorDomain" && (nsErr.code == 102 || nsErr.code == 204) {
+                return true
+            }
+            return false
         }
 
         public func webView(
@@ -346,28 +417,70 @@ public struct CenelisPanelWebView: UIViewRepresentable {
                 return
             }
 
-            // 3. Interception d'une éventuelle tentative de déconnexion web -> déconnexion globale native
+            // 3. Autoriser intégralement toutes les sous-requêtes et iframes (ponts SSO, aperçus, widgets internes)
+            if let targetFrame = navigationAction.targetFrame, !targetFrame.isMainFrame {
+                decisionHandler(.allow)
+                return
+            }
+
+            // 4. Interception d'une tentative de déconnexion web sur la frame principale -> déconnexion globale native
             if path == "/logout" || path == "/logout.srf" || path == "/deconnexion" {
                 decisionHandler(.cancel)
                 parent.onInterceptWebLogoutRequest()
                 return
             }
 
-            // 4. Neutralisation de la redemande automatique du Cenelis Connect PIN toutes les 1h côté web
-            if host == "sso.prod.cenelis.com" && path.hasPrefix("/pin") {
-                let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-                let retRaw = comps?.queryItems?.first(where: { $0.name == "returnUrl" })?.value
-                let retURL = retRaw.flatMap { URL(string: $0) } ?? webView.url
+            // 5. Neutralisation de la redemande web Cenelis Connect PIN (restaure la visibilité DOM pour éviter toute page blanche)
+            if host == "sso.prod.cenelis.com" && (path == "/pin" || path.hasPrefix("/pin/")) {
+                restoreWebViewVisibility(webView)
+                let retURL = resolvePinGateReturnURL(from: url, fallbackWebViewURL: webView.url)
                 decisionHandler(.cancel)
                 parent.onInterceptUnexpectedWebPinGate(retURL)
                 return
             }
 
-            // 5. Gestion fluide des liens target="_blank" (ouvrir dans la même WebView si domaine de confiance)
+            // 6. Gestion fluide des liens target="_blank" (dans la même WebView si écosystème interne, sinon navigateur externe)
             if navigationAction.targetFrame == nil {
-                webView.load(navigationAction.request)
+                if host.isEmpty || WorkspaceWebSessionPool.isTrustedEcosystemHost(host) {
+                    webView.load(navigationAction.request)
+                } else {
+                    #if canImport(UIKit)
+                    UIApplication.shared.open(url)
+                    #endif
+                }
                 decisionHandler(.cancel)
                 return
+            }
+
+            // 7. Autoriser tous les flux SSO/API et panels de l'écosystème (*.cenelis.com, *.cenelis.fr, *.viplenetwork.com, *.viple.digital, *.livria.store, *.viplemail.fr, *.viple-wingman.com)
+            decisionHandler(.allow)
+        }
+
+        public func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationResponse: WKNavigationResponse,
+            decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
+        ) {
+            guard navigationResponse.isForMainFrame else {
+                decisionHandler(.allow)
+                return
+            }
+
+            if let respURL = navigationResponse.response.url {
+                let host = (respURL.host ?? "").lowercased()
+                let path = respURL.path.lowercased()
+                if host == "sso.prod.cenelis.com" && (path == "/pin" || path.hasPrefix("/pin/")) {
+                    restoreWebViewVisibility(webView)
+                    let retURL = resolvePinGateReturnURL(from: respURL, fallbackWebViewURL: webView.url)
+                    decisionHandler(.cancel)
+                    parent.onInterceptUnexpectedWebPinGate(retURL)
+                    return
+                }
+            }
+
+            if let http = navigationResponse.response as? HTTPURLResponse, http.statusCode >= 500 {
+                let failedURL = navigationResponse.response.url?.absoluteString ?? "unknown"
+                Self.logger.warning("HTTP \(http.statusCode, privacy: .public) main-frame response on \(failedURL, privacy: .public)")
             }
 
             decisionHandler(.allow)
@@ -376,9 +489,7 @@ public struct CenelisPanelWebView: UIViewRepresentable {
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.scrollView.refreshControl?.endRefreshing()
             parent.controller.lastLoadError = nil
-
-            // Ré-appliquer par sécurité le masquage CSS du dock web flottant
-            webView.evaluateJavaScript(WorkspaceWebSessionPool.nativeWorkspaceDocumentEndScript, completionHandler: nil)
+            parent.controller.processTerminationRetryCount = 0
 
             // Exécuter l'action profonde éventuelle issue de la recherche « Fonctions »
             if let pendingJS = parent.controller.pendingPostLoadJavaScript, !pendingJS.isEmpty {
@@ -396,9 +507,39 @@ public struct CenelisPanelWebView: UIViewRepresentable {
 
         public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             webView.scrollView.refreshControl?.endRefreshing()
-            let nsErr = error as NSError
-            if nsErr.code == NSURLErrorCancelled { return }
+            if Self.isBenignNavigationCancellation(error) { return }
             parent.controller.lastLoadError = error.localizedDescription
+        }
+
+        public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            webView.scrollView.refreshControl?.endRefreshing()
+            if Self.isBenignNavigationCancellation(error) { return }
+            parent.controller.lastLoadError = error.localizedDescription
+        }
+
+        public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            webView.scrollView.refreshControl?.endRefreshing()
+            parent.controller.processTerminationRetryCount += 1
+            let attempt = parent.controller.processTerminationRetryCount
+            let targetLabel = webView.url?.absoluteString
+                ?? parent.controller.currentURL?.absoluteString
+                ?? parent.initialURL?.absoluteString
+                ?? "unknown"
+
+            Self.logger.error("WKWebView WebContent process terminated (attempt \(attempt, privacy: .public)/2) on \(targetLabel, privacy: .public)")
+            NSLog("[CenelisPanelWebView] WebContent process terminated (attempt %d/2) on %@", attempt, targetLabel)
+
+            if attempt <= 2 {
+                if webView.url != nil {
+                    webView.reload()
+                } else if let fallbackURL = parent.controller.currentURL ?? parent.initialURL {
+                    webView.load(URLRequest(url: fallbackURL))
+                }
+            } else {
+                Self.logger.fault("WKWebView WebContent termination auto-reload limit reached (\(attempt, privacy: .public) attempts) on \(targetLabel, privacy: .public)")
+                parent.controller.isLoading = false
+                parent.controller.lastLoadError = "Le moteur Web de cette console a été interrompu de manière répétée. Touchez « Réessayer » pour recharger."
+            }
         }
 
         public func webView(
@@ -409,11 +550,17 @@ public struct CenelisPanelWebView: UIViewRepresentable {
         ) -> WKWebView? {
             if let url = navigationAction.request.url {
                 let host = (url.host ?? "").lowercased()
-                if host == "academy.prod.cenelis.com" || url.scheme?.lowercased() == "cenelisacademy" {
+                if host == "academy.prod.cenelis.com" || host == "academy.cenelis.com" || url.scheme?.lowercased() == "cenelisacademy" {
                     parent.onInterceptCenelisAcademyURL(url)
                     return nil
                 }
-                webView.load(navigationAction.request)
+                if host.isEmpty || WorkspaceWebSessionPool.isTrustedEcosystemHost(host) {
+                    webView.load(navigationAction.request)
+                } else {
+                    #if canImport(UIKit)
+                    UIApplication.shared.open(url)
+                    #endif
+                }
             }
             return nil
         }
@@ -489,6 +636,7 @@ public struct SharedSSOAuthWebView: UIViewRepresentable {
     public func makeUIView(context: Context) -> WKWebView {
         let config = WorkspaceWebSessionPool.shared.makePanelWebViewConfiguration(includeNativeAdminCleanup: false)
         let wv = WKWebView(frame: .zero, configuration: config)
+        wv.customUserAgent = WorkspaceWebSessionPool.fullURLSessionUserAgent
         wv.navigationDelegate = context.coordinator
         wv.allowsBackForwardNavigationGestures = true
         wv.load(URLRequest(url: startURL))

@@ -56,12 +56,13 @@ public final class WorkspaceStoreViewModel: ObservableObject {
     @Published public var isSearchingAcademy: Bool = false
     @Published public var academyInstallAlertShown: Bool = false
 
-    // Tâches de fond : Keepalive anti-coupure 1h, Recherche debouncée & Jeton Bypass PIN pré-chauffé
+    // Tâches de fond : Keepalive anti-coupure 1h, Recherche debouncée, Rechargement post-PIN & Jeton Bypass PIN pré-chauffé
     private var hasEnteredBackgroundAtLeastOnce: Bool = false
     private var keepaliveTask: Task<Void, Never>?
     private var academySearchTask: Task<Void, Never>?
     private var prewarmedAcademyBypassToken: String? = nil
     private var prewarmedBypassCreatedAt: Date? = nil
+    private var pendingPinGateReturnURL: URL? = nil
 
     public var activeSecurityState: WorkspaceSecurityState {
         if isBooting { return .booting }
@@ -303,12 +304,28 @@ public final class WorkspaceStoreViewModel: ObservableObject {
         if let len = updatedPinLength {
             self.operatorProfile.pinLength = (len == 4) ? 4 : 6
         }
+        await WorkspaceWebSessionPool.shared.syncURLSessionCookiesToWebKit()
         WorkspaceWebSessionPool.shared.warmUpSSOBridgeIfNeeded(ssoBridgeURLString: ssoBridgeUrl)
 
         withAnimation(.spring(response: 0.44, dampingFraction: 0.84)) {
             self.isPinUnlocked = true
         }
         WorkspaceHaptics.success()
+
+        // Recharger proprement le panel actif si une redirection `/pin` avait été interceptée ou si la page était interrompue
+        webController.restoreDocumentVisibility()
+        if let reloadTarget = pendingPinGateReturnURL {
+            pendingPinGateReturnURL = nil
+            webController.load(url: reloadTarget)
+        } else if let panel = activePanel, !isShowingHub {
+            if webController.webView?.url == nil || webController.lastLoadError != nil {
+                if let fallbackURL = webController.currentURL ?? panel.normalizedAdminURL {
+                    webController.load(url: fallbackURL)
+                }
+            } else {
+                webController.refreshEmbeddedAdminRbacIfAvailable()
+            }
+        }
 
         startRollingPinKeepaliveLoop()
         Task {
@@ -339,7 +356,11 @@ public final class WorkspaceStoreViewModel: ObservableObject {
     }
 
     public func handleUnexpectedWebPinRedirect(intendedURL: URL?) {
+        webController.restoreDocumentVisibility()
+        let resolvedTarget = intendedURL ?? webController.currentURL ?? activePanel?.normalizedAdminURL
+
         guard isPinUnlocked, !workspaceToken.isEmpty, !pinProofToken.isEmpty else {
+            pendingPinGateReturnURL = resolvedTarget
             isPinUnlocked = false
             return
         }
@@ -349,12 +370,14 @@ public final class WorkspaceStoreViewModel: ObservableObject {
                 pinProof: pinProofToken
             )
             if renewed {
-                if let target = intendedURL {
+                pendingPinGateReturnURL = nil
+                if let target = resolvedTarget {
                     webController.load(url: target)
                 } else {
                     webController.reload()
                 }
             } else {
+                pendingPinGateReturnURL = resolvedTarget
                 isPinUnlocked = false
             }
         }
@@ -389,6 +412,7 @@ public final class WorkspaceStoreViewModel: ObservableObject {
         workspaceToken = ""
         pinProofToken = ""
         prewarmedAcademyBypassToken = nil
+        pendingPinGateReturnURL = nil
         isPinUnlocked = false
         activePanel = nil
         isShowingHub = true
@@ -505,6 +529,7 @@ public final class WorkspaceStoreViewModel: ObservableObject {
 
         guard let url = panel.normalizedAdminURL else { return }
         WorkspaceHaptics.medium()
+        pendingPinGateReturnURL = nil
         activePanel = panel
         withAnimation(.spring(response: 0.36, dampingFraction: 0.86)) {
             isShowingHub = false
@@ -522,6 +547,7 @@ public final class WorkspaceStoreViewModel: ObservableObject {
 
         guard let targetURL = fn.targetURL else { return }
         WorkspaceHaptics.medium()
+        pendingPinGateReturnURL = nil
 
         if let matchingPanel = allPanels.first(where: { $0.id == fn.panelId }) {
             activePanel = matchingPanel

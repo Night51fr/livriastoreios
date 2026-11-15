@@ -8,9 +8,32 @@ import WebKit
 public final class WorkspaceWebSessionPool {
     public static let shared = WorkspaceWebSessionPool()
 
-    /// User-Agent normalisé pour que VipleAPI calcule systématiquement `BrowserKey = "mob:ios:safari"`
-    public static let unifiedUserAgentSuffix = "Version/18.0 Mobile/15E148 Safari/604.1 CenelisWorkspace/2026.11"
-    public static let fullURLSessionUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1 CenelisWorkspace/2026.11"
+    /// User-Agent normalisé sans jeton `Safari/` afin que `VipleAPI.NormalizeBrowserKey` calcule systématiquement
+    /// `BrowserKey = "mob:ios:other"` de façon identique entre `WorkspaceAPIClient` (`URLSession`) et tous les `WKWebView` (iPhone & iPad).
+    public static let unifiedUserAgentSuffix = "Mobile/15E148 CenelisWorkspace/2026.11"
+    public static let fullURLSessionUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 CenelisWorkspace/2026.11"
+
+    /// Racines de domaines internes de confiance de l'écosystème Cenelis / Viple / Livria
+    public static let trustedEcosystemDomainRoots: [String] = [
+        "cenelis.com",
+        "cenelis.fr",
+        "viplenetwork.com",
+        "viple.digital",
+        "livria.store",
+        "viplemail.fr",
+        "viple-wingman.com"
+    ]
+
+    public static func isTrustedEcosystemHost(_ rawHost: String) -> Bool {
+        let normalized = rawHost
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !normalized.isEmpty else { return false }
+        return trustedEcosystemDomainRoots.contains { root in
+            normalized == root || normalized.hasSuffix("." + root)
+        }
+    }
 
     /// Unique `WKWebsiteDataStore` partagé entre toutes les vues Web de l'application (unifie nativement les processus WebKit et cookies SSO depuis iOS 15+)
     public let sharedDataStore: WKWebsiteDataStore = .default()
@@ -23,7 +46,7 @@ public final class WorkspaceWebSessionPool {
 
     private init() {}
 
-    // MARK: - Configuration WKWebView Standardisée avec Nettoyage CSS / JS
+    // MARK: - Configuration WKWebView Standardisée avec Nettoyage CSS Statique
 
     public func makePanelWebViewConfiguration(includeNativeAdminCleanup: Bool = true) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
@@ -39,14 +62,20 @@ public final class WorkspaceWebSessionPool {
             let startScript = WKUserScript(
                 source: Self.nativeWorkspaceDocumentStartScript,
                 injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+            let subframeStyleScript = WKUserScript(
+                source: Self.nativeWorkspaceSubframeCSSScript,
+                injectionTime: .atDocumentStart,
                 forMainFrameOnly: false
             )
             let endScript = WKUserScript(
                 source: Self.nativeWorkspaceDocumentEndScript,
                 injectionTime: .atDocumentEnd,
-                forMainFrameOnly: false
+                forMainFrameOnly: true
             )
             contentController.addUserScript(startScript)
+            contentController.addUserScript(subframeStyleScript)
             contentController.addUserScript(endScript)
         }
         config.userContentController = contentController
@@ -55,20 +84,32 @@ public final class WorkspaceWebSessionPool {
 
     // MARK: - Pont SSO Silencieux Viple Live ID <-> Cenelis Connect
 
+    public func syncURLSessionCookiesToWebKit() async {
+        let sessionCookies = HTTPCookieStorage.shared.cookies ?? []
+        for cookie in sessionCookies where Self.isTrustedEcosystemHost(cookie.domain) {
+            await sharedDataStore.httpCookieStore.setCookie(cookie)
+        }
+    }
+
     public func warmUpSSOBridgeIfNeeded(ssoBridgeURLString: String?) {
         guard let raw = ssoBridgeURLString,
               let url = URL(string: raw) else {
+            Task { @MainActor in
+                await self.syncURLSessionCookiesToWebKit()
+            }
             return
         }
 
         if silentBridgeWebView == nil {
             let cfg = makePanelWebViewConfiguration(includeNativeAdminCleanup: false)
             let wv = WKWebView(frame: .zero, configuration: cfg)
+            wv.customUserAgent = Self.fullURLSessionUserAgent
             silentBridgeWebView = wv
         }
-        silentBridgeWebView?.load(URLRequest(url: url))
 
         Task { @MainActor in
+            await self.syncURLSessionCookiesToWebKit()
+            self.silentBridgeWebView?.load(URLRequest(url: url))
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             await self.backupMasterCookiesToKeychain()
         }
@@ -87,14 +128,10 @@ public final class WorkspaceWebSessionPool {
     }
 
     public func backupMasterCookiesToKeychain() async {
+        await syncURLSessionCookiesToWebKit()
         let cookies = await sharedDataStore.httpCookieStore.allCookies()
         let critical = cookies.filter { c in
-            let dom = c.domain.lowercased()
-            return dom.contains("viple.digital")
-                || dom.contains("cenelis.com")
-                || dom.contains("cenelis.fr")
-                || dom.contains("viplenetwork.com")
-                || dom.contains("livria.store")
+            Self.isTrustedEcosystemHost(c.domain)
         }
         guard !critical.isEmpty else { return }
 
@@ -236,7 +273,7 @@ public final class WorkspaceWebSessionPool {
         SecItemDelete(query as CFDictionary)
     }
 
-    // MARK: - Scripts WKUserScript d'Encapsulation Native & Masquage Strict de la Pilule Web `/admin`
+    // MARK: - Scripts WKUserScript d'Encapsulation Native & Masquage CSS Statique de la Pilule Web `/admin`
 
     public static let nativeWorkspaceCSSRules: String = """
     /* 1. Masquage total et permanent du sélecteur flottant web /admin (remplacé à 100 % par SwiftUI) */
@@ -246,11 +283,13 @@ public final class WorkspaceWebSessionPool {
     .vua-panel,
     #vua-panel-list,
     .vua-backdrop,
-    [aria-label="Barre d'administration unifiée"] {
+    [aria-label="Barre d'administration unifiée"],
+    [aria-label="Sélecteur des consoles d'administration"],
+    [aria-label="Toutes les consoles /admin de l'écosystème"] {
         display: none !important;
         visibility: hidden !important;
-        opacity: 0 !important;
         pointer-events: none !important;
+        opacity: 0 !important;
         width: 0 !important;
         height: 0 !important;
         max-height: 0 !important;
@@ -285,55 +324,127 @@ public final class WorkspaceWebSessionPool {
     }
     """
 
-    public static var nativeWorkspaceDocumentStartScript: String {
-        let escapedCSS = nativeWorkspaceCSSRules
+    private static var escapedNativeCSS: String {
+        nativeWorkspaceCSSRules
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "`", with: "\\`")
+            .replacingOccurrences(of: "${", with: "\\${")
+    }
+
+    public static var nativeWorkspaceDocumentStartScript: String {
+        let escapedCSS = escapedNativeCSS
         return """
         (function() {
             window.__CENELIS_WORKSPACE_NATIVE_IOS__ = true;
-            function injectNativeWorkspaceStyle() {
-                if (document.getElementById('cenelis-workspace-native-style')) return;
+            var STYLE_ID = 'cenelis-workspace-native-style';
+            var isApplying = false;
+            var rafScheduled = false;
+            var observer = null;
+
+            function reconnectRootObserver() {
+                if (!observer) return;
+                observer.disconnect();
+                var docEl = document.documentElement;
+                if (docEl) {
+                    observer.observe(docEl, { childList: true });
+                }
+                var headEl = document.head;
+                if (headEl && headEl !== docEl) {
+                    observer.observe(headEl, { childList: true });
+                }
+            }
+
+            function ensureNativeWorkspaceStyleMounted() {
+                var host = document.head || document.documentElement;
+                if (!host || isApplying) return;
+
+                var existing = document.getElementById(STYLE_ID);
+                if (existing && host.contains(existing)) {
+                    return;
+                }
+
+                isApplying = true;
+                if (observer) {
+                    observer.disconnect();
+                }
+                try {
+                    var style = existing || document.createElement('style');
+                    style.id = STYLE_ID;
+                    style.setAttribute('data-cenelis-native', '1');
+                    if (!existing) {
+                        style.textContent = `\(escapedCSS)`;
+                    }
+                    host.appendChild(style);
+                } finally {
+                    isApplying = false;
+                    reconnectRootObserver();
+                }
+            }
+
+            function scheduleStyleMount() {
+                if (isApplying || rafScheduled) return;
+                var host = document.head || document.documentElement;
+                var existing = document.getElementById(STYLE_ID);
+                if (host && existing && host.contains(existing)) return;
+                rafScheduled = true;
+                var raf = window.requestAnimationFrame || function(cb) { return setTimeout(cb, 16); };
+                raf(function() {
+                    rafScheduled = false;
+                    ensureNativeWorkspaceStyleMounted();
+                });
+            }
+
+            ensureNativeWorkspaceStyleMounted();
+
+            if (typeof MutationObserver === 'function') {
+                observer = new MutationObserver(function() {
+                    scheduleStyleMount();
+                });
+                reconnectRootObserver();
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                ensureNativeWorkspaceStyleMounted();
+                reconnectRootObserver();
+            }, { once: true });
+        })();
+        """
+    }
+
+    public static var nativeWorkspaceSubframeCSSScript: String {
+        let escapedCSS = escapedNativeCSS
+        return """
+        (function() {
+            try { if (window === window.top) return; } catch (_) {}
+            window.__CENELIS_WORKSPACE_NATIVE_IOS__ = true;
+            function mountSubframeStyle() {
+                var host = document.head || document.documentElement;
+                if (!host || document.getElementById('cenelis-workspace-native-style')) return;
                 var style = document.createElement('style');
                 style.id = 'cenelis-workspace-native-style';
                 style.textContent = `\(escapedCSS)`;
-                (document.head || document.documentElement).appendChild(style);
+                host.appendChild(style);
             }
-            injectNativeWorkspaceStyle();
-            document.addEventListener('DOMContentLoaded', injectNativeWorkspaceStyle, { once: true });
-
-            var observer = new MutationObserver(function() {
-                injectNativeWorkspaceStyle();
-                var docks = document.querySelectorAll('.vua-dock, .vua-panel, .vua-backdrop, #vua-dock-burger');
-                for (var i = 0; i < docks.length; i++) {
-                    docks[i].style.setProperty('display', 'none', 'important');
-                    docks[i].style.setProperty('visibility', 'hidden', 'important');
-                    docks[i].setAttribute('aria-hidden', 'true');
-                }
-            });
-            observer.observe(document.documentElement, { childList: true, subtree: true });
+            mountSubframeStyle();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', mountSubframeStyle, { once: true });
+            }
         })();
         """
     }
 
     public static var nativeWorkspaceDocumentEndScript: String {
-        let escapedCSS = nativeWorkspaceCSSRules
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
+        let escapedCSS = escapedNativeCSS
         return """
         (function() {
-            var existing = document.getElementById('cenelis-workspace-native-style');
-            if (!existing) {
-                var style = document.createElement('style');
-                style.id = 'cenelis-workspace-native-style';
-                style.textContent = `\(escapedCSS)`;
-                (document.head || document.documentElement).appendChild(style);
-            }
-            var docks = document.querySelectorAll('.vua-dock, .vua-panel, .vua-backdrop, #vua-dock-burger');
-            for (var i = 0; i < docks.length; i++) {
-                docks[i].style.setProperty('display', 'none', 'important');
-                docks[i].style.setProperty('visibility', 'hidden', 'important');
-            }
+            window.__CENELIS_WORKSPACE_NATIVE_IOS__ = true;
+            var host = document.head || document.documentElement;
+            if (!host || document.getElementById('cenelis-workspace-native-style')) return;
+            var style = document.createElement('style');
+            style.id = 'cenelis-workspace-native-style';
+            style.setAttribute('data-cenelis-native', '1');
+            style.textContent = `\(escapedCSS)`;
+            host.appendChild(style);
         })();
         """
     }
