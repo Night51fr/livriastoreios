@@ -1,5 +1,5 @@
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 import AudioToolbox
 #if canImport(UIKit)
 import UIKit
@@ -225,24 +225,21 @@ public final class ScannerSensoryFeedbackEngine {
 
         var wav = Data(capacity: Int(44 + dataSize))
         wav.append(contentsOf: "RIFF".utf8)
-        wav.append(littleEndianBytes(riffChunkSize))
+        wav.append(contentsOf: littleEndianBytes(riffChunkSize))
         wav.append(contentsOf: "WAVE".utf8)
         wav.append(contentsOf: "fmt ".utf8)
-        wav.append(littleEndianBytes(fmtChunkSize))
-        wav.append(littleEndianBytes(audioFormatPCM))
-        wav.append(littleEndianBytes(numChannels))
-        wav.append(littleEndianBytes(sampleRateU32))
-        wav.append(littleEndianBytes(byteRate))
-        wav.append(littleEndianBytes(blockAlign))
-        wav.append(littleEndianBytes(bitsPerSample))
+        wav.append(contentsOf: littleEndianBytes(fmtChunkSize))
+        wav.append(contentsOf: littleEndianBytes(audioFormatPCM))
+        wav.append(contentsOf: littleEndianBytes(numChannels))
+        wav.append(contentsOf: littleEndianBytes(sampleRateU32))
+        wav.append(contentsOf: littleEndianBytes(byteRate))
+        wav.append(contentsOf: littleEndianBytes(blockAlign))
+        wav.append(contentsOf: littleEndianBytes(bitsPerSample))
         wav.append(contentsOf: "data".utf8)
-        wav.append(littleEndianBytes(dataSize))
+        wav.append(contentsOf: littleEndianBytes(dataSize))
 
-        pcmSamples.withUnsafeBufferPointer { ptr in
-            wav.append(UnsafeBufferPointer(
-                start: UnsafeRawPointer(ptr.baseAddress)?.assumingMemoryBound(to: UInt8.self),
-                count: Int(dataSize)
-            ))
+        pcmSamples.withUnsafeBytes { rawBuffer in
+            wav.append(contentsOf: rawBuffer)
         }
         return wav
     }
@@ -1030,7 +1027,113 @@ private struct VisionKitHardwareBarcodeView: UIViewControllerRepresentable {
 }
 #endif
 
-// MARK: - Moteur 2 (Fallback Universel) : `AVCaptureSession` + `AVCaptureMetadataOutput`
+// MARK: - Moteur 2 (Fallback Universel) : `AVCaptureSession` + `AVCaptureMetadataOutput` (Swift 6 Strict Concurrency)
+
+private final class HardwareCameraSessionBox: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked Sendable {
+    let captureSession = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "com.cenelis.workspace.barcodescanner")
+    private var activeDevice: AVCaptureDevice?
+    private var isConfigured = false
+    private let onDetected: @Sendable (String, String) -> Void
+
+    init(onDetected: @escaping @Sendable (String, String) -> Void) {
+        self.onDetected = onDetected
+        super.init()
+    }
+
+    func configureAndStart(initialTorch: Bool, initialMacro: Bool) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if !self.isConfigured {
+                self.captureSession.beginConfiguration()
+                if self.captureSession.canSetSessionPreset(.hd1920x1080) {
+                    self.captureSession.sessionPreset = .hd1920x1080
+                }
+
+                guard let videoDevice = HardwareCameraOpticsHelper.preferredRearVideoDevice(),
+                      let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+                      self.captureSession.canAddInput(videoInput) else {
+                    self.captureSession.commitConfiguration()
+                    return
+                }
+                self.captureSession.addInput(videoInput)
+                self.activeDevice = videoDevice
+
+                let metadataOutput = AVCaptureMetadataOutput()
+                if self.captureSession.canAddOutput(metadataOutput) {
+                    self.captureSession.addOutput(metadataOutput)
+                    metadataOutput.setMetadataObjectsDelegate(self, queue: self.sessionQueue)
+                    let desiredTypes: [AVMetadataObject.ObjectType] = [
+                        .ean13, .ean8, .upce, .code128, .code39, .itf14, .qr, .dataMatrix
+                    ]
+                    let supported = Set(metadataOutput.availableMetadataObjectTypes)
+                    metadataOutput.metadataObjectTypes = desiredTypes.filter { supported.contains($0) }
+                }
+
+                HardwareCameraOpticsHelper.applyMacroAndTorchConfiguration(
+                    to: videoDevice,
+                    torchOn: initialTorch,
+                    macroZoom: initialMacro
+                )
+                self.captureSession.commitConfiguration()
+                self.isConfigured = true
+            }
+
+            if !self.captureSession.isRunning {
+                self.captureSession.startRunning()
+            }
+        }
+    }
+
+    func updateOptics(torchOn: Bool, macroZoom: Bool) {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.activeDevice else { return }
+            HardwareCameraOpticsHelper.applyMacroAndTorchConfiguration(
+                to: device,
+                torchOn: torchOn,
+                macroZoom: macroZoom
+            )
+        }
+    }
+
+    func stop() {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if self.captureSession.isRunning {
+                self.captureSession.stopRunning()
+            }
+        }
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard let readable = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+              let rawValue = readable.stringValue,
+              !rawValue.isEmpty else {
+            return
+        }
+        let sym = Self.friendlyAVSymbology(readable.type, payload: rawValue)
+        onDetected(rawValue, sym)
+    }
+
+    private static func friendlyAVSymbology(_ type: AVMetadataObject.ObjectType, payload: String) -> String {
+        switch type {
+        case .ean13:
+            return (payload.hasPrefix("978") || payload.hasPrefix("979")) ? "ISBN-13" : "EAN-13"
+        case .ean8: return "EAN-8"
+        case .upce: return "UPC-E"
+        case .code128: return "CODE-128"
+        case .code39: return "CODE-39"
+        case .itf14: return "ITF-14"
+        case .qr: return "QR"
+        case .dataMatrix: return "2D-DATAMATRIX"
+        default: return type.rawValue.uppercased()
+        }
+    }
+}
 
 private struct AVFoundationHardwareBarcodeView: UIViewRepresentable {
     @Binding var isTorchOn: Bool
@@ -1067,115 +1170,35 @@ private struct AVFoundationHardwareBarcodeView: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+    final class Coordinator {
         var parent: AVFoundationHardwareBarcodeView
-        private let captureSession = AVCaptureSession()
-        private let sessionQueue = DispatchQueue(label: "com.cenelis.workspace.barcodescanner")
-        private var activeDevice: AVCaptureDevice?
+        private var cameraBox: HardwareCameraSessionBox? = nil
 
         init(parent: AVFoundationHardwareBarcodeView) {
             self.parent = parent
+            self.cameraBox = HardwareCameraSessionBox { [weak self] rawValue, sym in
+                Task { @MainActor [weak self] in
+                    self?.parent.onBarcodeDetected(rawValue, sym)
+                }
+            }
         }
 
         func configureCaptureSession(in view: CameraPreviewContainerView) {
-            view.videoPreviewLayer.session = captureSession
+            guard let cameraBox else { return }
+            view.videoPreviewLayer.session = cameraBox.captureSession
             view.videoPreviewLayer.videoGravity = .resizeAspectFill
-
-            let initialTorch = parent.isTorchOn
-            let initialMacro = parent.isMacroZoomEnabled
-            let session = captureSession
-            let delegateRef = self
-
-            sessionQueue.async {
-                session.beginConfiguration()
-                if session.canSetSessionPreset(.hd1920x1080) {
-                    session.sessionPreset = .hd1920x1080
-                }
-
-                guard let videoDevice = HardwareCameraOpticsHelper.preferredRearVideoDevice(),
-                      let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
-                      session.canAddInput(videoInput) else {
-                    session.commitConfiguration()
-                    return
-                }
-                session.addInput(videoInput)
-
-                let metadataOutput = AVCaptureMetadataOutput()
-                if session.canAddOutput(metadataOutput) {
-                    session.addOutput(metadataOutput)
-                    metadataOutput.setMetadataObjectsDelegate(delegateRef, queue: DispatchQueue.main)
-                    let desiredTypes: [AVMetadataObject.ObjectType] = [
-                        .ean13, .ean8, .upce, .code128, .code39, .itf14, .qr, .dataMatrix
-                    ]
-                    let supported = Set(metadataOutput.availableMetadataObjectTypes)
-                    metadataOutput.metadataObjectTypes = desiredTypes.filter { supported.contains($0) }
-                }
-
-                HardwareCameraOpticsHelper.applyMacroAndTorchConfiguration(
-                    to: videoDevice,
-                    torchOn: initialTorch,
-                    macroZoom: initialMacro
-                )
-                session.commitConfiguration()
-                session.startRunning()
-
-                Task { @MainActor in
-                    delegateRef.activeDevice = videoDevice
-                }
-            }
+            cameraBox.configureAndStart(
+                initialTorch: parent.isTorchOn,
+                initialMacro: parent.isMacroZoomEnabled
+            )
         }
 
         func updateOptics(torchOn: Bool, macroZoom: Bool) {
-            guard let device = activeDevice else { return }
-            sessionQueue.async {
-                HardwareCameraOpticsHelper.applyMacroAndTorchConfiguration(
-                    to: device,
-                    torchOn: torchOn,
-                    macroZoom: macroZoom
-                )
-            }
+            cameraBox?.updateOptics(torchOn: torchOn, macroZoom: macroZoom)
         }
 
         func stopSession() {
-            let session = captureSession
-            sessionQueue.async {
-                if session.isRunning {
-                    session.stopRunning()
-                }
-            }
-        }
-
-        nonisolated func metadataOutput(
-            _ output: AVCaptureMetadataOutput,
-            didOutput metadataObjects: [AVMetadataObject],
-            from connection: AVCaptureConnection
-        ) {
-            guard let readable = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
-                  let rawValue = readable.stringValue,
-                  !rawValue.isEmpty else {
-                return
-            }
-            let objType = readable.type
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let sym = Self.friendlyAVSymbology(objType, payload: rawValue)
-                self.parent.onBarcodeDetected(rawValue, sym)
-            }
-        }
-
-        private static func friendlyAVSymbology(_ type: AVMetadataObject.ObjectType, payload: String) -> String {
-            switch type {
-            case .ean13:
-                return (payload.hasPrefix("978") || payload.hasPrefix("979")) ? "ISBN-13" : "EAN-13"
-            case .ean8: return "EAN-8"
-            case .upce: return "UPC-E"
-            case .code128: return "CODE-128"
-            case .code39: return "CODE-39"
-            case .itf14: return "ITF-14"
-            case .qr: return "QR"
-            case .dataMatrix: return "2D-DATAMATRIX"
-            default: return type.rawValue.uppercased()
-            }
+            cameraBox?.stop()
         }
     }
 }

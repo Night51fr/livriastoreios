@@ -2,7 +2,7 @@ import Foundation
 import Security
 import WebKit
 
-// MARK: - Pool de Session Web Partagé (WKProcessPool + WKWebsiteDataStore) & Trousseau Keychain
+// MARK: - Pool de Session Web Partagé (WKWebsiteDataStore Unifié iOS 15+) & Trousseau Keychain
 
 @MainActor
 public final class WorkspaceWebSessionPool {
@@ -12,8 +12,7 @@ public final class WorkspaceWebSessionPool {
     public static let unifiedUserAgentSuffix = "Version/18.0 Mobile/15E148 Safari/604.1 CenelisWorkspace/2026.11"
     public static let fullURLSessionUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1 CenelisWorkspace/2026.11"
 
-    /// Unique `WKProcessPool` et `WKWebsiteDataStore` partagés entre toutes les vues Web de l'application
-    public let sharedProcessPool = WKProcessPool()
+    /// Unique `WKWebsiteDataStore` partagé entre toutes les vues Web de l'application (unifie nativement les processus WebKit et cookies SSO depuis iOS 15+)
     public let sharedDataStore: WKWebsiteDataStore = .default()
 
     /// WebView invisible dédiée à l'établissement silencieux du pont SSO Viple Live ID (`ssoBridgeUrl`)
@@ -28,7 +27,6 @@ public final class WorkspaceWebSessionPool {
 
     public func makePanelWebViewConfiguration(includeNativeAdminCleanup: Bool = true) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        config.processPool = sharedProcessPool
         config.websiteDataStore = sharedDataStore
         config.applicationNameForUserAgent = Self.unifiedUserAgentSuffix
         config.allowsInlineMediaPlayback = true
