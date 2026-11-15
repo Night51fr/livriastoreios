@@ -31,6 +31,9 @@ public struct ActivePanelWorkspaceShellView: View {
                         Task {
                             await vm.performFullLogout()
                         }
+                    },
+                    onBarcodeScannerMessage: { action, scanRequest in
+                        vm.handleWebBarcodeScannerBridge(action: action, request: scanRequest)
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

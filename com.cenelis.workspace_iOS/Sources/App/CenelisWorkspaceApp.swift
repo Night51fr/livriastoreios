@@ -99,6 +99,23 @@ public struct WorkspaceRootContainerView: View {
         .sheet(isPresented: $vm.isShowingNativeAdminSheet) {
             NativeAdminPanelsSheetView(vm: vm)
         }
+        .fullScreenCover(item: $vm.activeBarcodeScanRequest) { scanRequest in
+            NativeBarcodeScannerModalView(
+                request: scanRequest,
+                onCodeScanned: { code, symbology, mode, totalCount in
+                    vm.forwardScannedBarcodeToWeb(
+                        code: code,
+                        symbology: symbology,
+                        mode: mode,
+                        totalCount: totalCount,
+                        fieldContext: scanRequest.fieldContext
+                    )
+                },
+                onCloseScanner: { mode, entries in
+                    vm.handleBarcodeScannerClosed(mode: mode, entries: entries)
+                }
+            )
+        }
         .alert("Application Cenelis Academy requise", isPresented: $vm.academyInstallAlertShown) {
             Button("Compris", role: .cancel) {}
         } message: {

@@ -37,6 +37,12 @@ Application iOS native (**Swift 6 / SwiftUI + WKWebView**, iOS 18+) servant de h
 - Tout clic sur **Cenelis Academy** (depuis le Hub, la modale `/admin`, l'onglet *Aide*, ou un lien interne intercepté dans une `WKWebView`) n'ouvre jamais le site web dans la WebView mais déclenche `UIApplication.shared.open` vers `cenelisacademy://handoff`.
 - Émission d'un jeton cryptographique signé HMAC-SHA256 à usage unique (`capb_v1.*`, validité courte + `jti` 128 bits consommé atomiquement par `POST /api/mobile/v1/auth/redeem-pin-bypass`) permettant à **Cenelis Academy** de déverrouiller automatiquement sa garde PIN et d'ouvrir directement le cours et la section demandés.
 
+### 6. Lecteur Matériel de Codes-Barres / ISBN Natif (`Viple Wingman`)
+- **Pont WebKit `barcodeScanner`** (`window.webkit.messageHandlers.barcodeScanner`) exposé dans `CenelisPanelWebView` et détecté automatiquement côté web par **Viple Wingman**.
+- **Moteur optique `VisionKit` (`DataScannerViewController`) + fallback `AVCaptureMetadataOutput`** (`Sources/Scanner/NativeBarcodeScannerModalView.swift`) : support natif **EAN-13 / ISBN**, EAN-8, UPC-E, Code 128, Code 39, ITF-14, QR Code et DataMatrix, avec **bouton Torche/Flash** et **autofocus macro rapproché** (`1× / 1.6×`).
+- **Retour sensoriel double à latence nulle** : bip sonore court façon douchette laser (synthétisé PCM 16-bit 44,1 kHz préchargé en RAM via `AVAudioPlayer`, audible même en mode silencieux) + vibration haptique (`UIImpactFeedbackGenerator`).
+- **Mode Scan Unique & Mode Rafale** : fermeture automatique après lecture unique ou enchaînement continu avec compteur en direct pour la réception de cartons et le picking, avec remontée temps réel via `window.onNativeBarcodeScanned(code, meta)`.
+
 ---
 
 ## Structure du Projet

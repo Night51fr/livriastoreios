@@ -75,29 +75,115 @@ public final class PanelWebController: ObservableObject {
         webView?.stopLoading()
         webView?.loadHTMLString("<html><body style='background:#0E1513;'></body></html>", baseURL: nil)
     }
+
+    /// Renvoie le code-barres / ISBN lu par le scanner matériel iOS à Wingman via `window.onNativeBarcodeScanned(code, meta)`
+    public func deliverScannedBarcode(
+        code: String,
+        symbology: String,
+        mode: NativeBarcodeScanMode,
+        totalCount: Int,
+        fieldContext: String
+    ) {
+        guard let wv = webView else { return }
+        let payloadDict: [String: Any] = [
+            "code": code,
+            "symbology": symbology,
+            "mode": mode.rawValue,
+            "count": totalCount,
+            "field": fieldContext,
+            "isIsbn": (code.count == 13 && (code.hasPrefix("978") || code.hasPrefix("979"))) || code.count == 10
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payloadDict),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return
+        }
+
+        let js = """
+        (function(meta) {
+            var code = meta.code || "";
+            if (typeof window.onNativeBarcodeScanned === "function") {
+                window.onNativeBarcodeScanned(code, meta);
+            }
+            window.dispatchEvent(new CustomEvent("cenelis:native-barcode", { detail: meta }));
+        })(\(jsonString));
+        """
+        wv.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// Notifie Wingman de la fermeture de la modale native (avec le récapitulatif éventuel du mode Rafale)
+    public func notifyBarcodeScannerClosed(mode: NativeBarcodeScanMode, entries: [ScannedBarcodeEntry]) {
+        guard let wv = webView else { return }
+        let itemsArray: [[String: Any]] = entries.map { entry in
+            [
+                "code": entry.code,
+                "symbology": entry.symbology,
+                "quantity": entry.quantity
+            ]
+        }
+        let summaryDict: [String: Any] = [
+            "mode": mode.rawValue,
+            "totalScanned": entries.reduce(0) { $0 + $1.quantity },
+            "uniqueCount": entries.count,
+            "items": itemsArray
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: summaryDict),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return
+        }
+
+        let js = """
+        (function(summary) {
+            if (typeof window.onNativeBarcodeScannerClosed === "function") {
+                window.onNativeBarcodeScannerClosed(summary);
+            }
+            window.dispatchEvent(new CustomEvent("cenelis:native-barcode-closed", { detail: summary }));
+        })(\(jsonString));
+        """
+        wv.evaluateJavaScript(js, completionHandler: nil)
+    }
 }
 
-// MARK: - Vue SwiftUI Encapsulant WKWebView (Pull-to-Refresh, Swipe-Back, Safe Areas, Interceptions)
+// MARK: - Délégué Faible `WKScriptMessageHandler` (Évite tout cycle de rétention avec WKUserContentController)
+
+@MainActor
+private final class WeakBarcodeScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+
+    init(delegate: WKScriptMessageHandler) {
+        self.delegate = delegate
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        delegate?.userContentController(userContentController, didReceive: message)
+    }
+}
+
+// MARK: - Vue SwiftUI Encapsulant WKWebView (Pull-to-Refresh, Swipe-Back, Safe Areas, Interceptions & Pont `barcodeScanner`)
 
 public struct CenelisPanelWebView: UIViewRepresentable {
+    public static let barcodeHandlerName = "barcodeScanner"
+
     @ObservedObject public var controller: PanelWebController
     public let initialURL: URL?
     public let onInterceptCenelisAcademyURL: (URL) -> Void
     public let onInterceptUnexpectedWebPinGate: (URL?) -> Void
     public let onInterceptWebLogoutRequest: () -> Void
+    public let onBarcodeScannerMessage: (String, NativeBarcodeScanRequest?) -> Void
 
     public init(
         controller: PanelWebController,
         initialURL: URL?,
         onInterceptCenelisAcademyURL: @escaping (URL) -> Void,
         onInterceptUnexpectedWebPinGate: @escaping (URL?) -> Void,
-        onInterceptWebLogoutRequest: @escaping () -> Void
+        onInterceptWebLogoutRequest: @escaping () -> Void,
+        onBarcodeScannerMessage: @escaping (String, NativeBarcodeScanRequest?) -> Void = { _, _ in }
     ) {
         self.controller = controller
         self.initialURL = initialURL
         self.onInterceptCenelisAcademyURL = onInterceptCenelisAcademyURL
         self.onInterceptUnexpectedWebPinGate = onInterceptUnexpectedWebPinGate
         self.onInterceptWebLogoutRequest = onInterceptWebLogoutRequest
+        self.onBarcodeScannerMessage = onBarcodeScannerMessage
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -106,6 +192,11 @@ public struct CenelisPanelWebView: UIViewRepresentable {
 
     public func makeUIView(context: Context) -> WKWebView {
         let config = WorkspaceWebSessionPool.shared.makePanelWebViewConfiguration(includeNativeAdminCleanup: true)
+        // Exposition du pont matériel natif `window.webkit.messageHandlers.barcodeScanner` pour Viple Wingman
+        config.userContentController.add(
+            WeakBarcodeScriptMessageHandler(delegate: context.coordinator),
+            name: Self.barcodeHandlerName
+        )
         let webView = WKWebView(frame: .zero, configuration: config)
 
         // Ergonomie mobile 100 % native : Swipe-Back, Safe Areas, zéro barre Safari
@@ -148,15 +239,28 @@ public struct CenelisPanelWebView: UIViewRepresentable {
         }
     }
 
-    // MARK: - Coordinator WKNavigationDelegate & WKUIDelegate
+    public static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Self.barcodeHandlerName)
+    }
+
+    // MARK: - Coordinator WKNavigationDelegate, WKUIDelegate & WKScriptMessageHandler (`barcodeScanner`)
 
     @MainActor
-    public final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    public final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var parent: CenelisPanelWebView
         private var observations: [NSKeyValueObservation] = []
 
         init(parent: CenelisPanelWebView) {
             self.parent = parent
+        }
+
+        public func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == CenelisPanelWebView.barcodeHandlerName else { return }
+            let parsed = NativeBarcodeScanRequest.fromJSMessageBody(message.body)
+            parent.onBarcodeScannerMessage(parsed.action, parsed.request)
         }
 
         func attachObservers(to webView: WKWebView) {

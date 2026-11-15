@@ -39,6 +39,8 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Cenelis Workspace utilise l'appareil photo et l'autofocus macro pour scanner instantanément les codes-barres ISBN / EAN-13, Code 128 et QR Codes dans Viple Wingman et les consoles d'administration.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

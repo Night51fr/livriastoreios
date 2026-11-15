@@ -30,6 +30,9 @@ public final class WorkspaceStoreViewModel: ObservableObject {
     @Published public var isFloatingBurgerHidden: Bool = false
     @Published public var showHiddenBurgerHintToast: Bool = false
 
+    // 3b. Lecteur Matériel Natif de Codes-Barres / ISBN (`window.webkit.messageHandlers.barcodeScanner` · Wingman)
+    @Published public var activeBarcodeScanRequest: NativeBarcodeScanRequest? = nil
+
     // 4. Annuaire des Panels, Statuts de Santé & Recherche Multi-Onglets (Panels / Fonctions / Aide Academy)
     @Published public var allPanels: [AdminPanelItem] = EcosystemCatalogRegistry.fallbackPanels
     @Published public var panelHealthMap: [String: AdminPanelHealthStatus] = [:]
@@ -129,6 +132,7 @@ public final class WorkspaceStoreViewModel: ObservableObject {
         keepaliveTask?.cancel()
         keepaliveTask = nil
         isShowingNativeAdminSheet = false
+        activeBarcodeScanRequest = nil
         isPinUnlocked = false
         pinProofToken = ""
         prewarmedAcademyBypassToken = nil
@@ -389,6 +393,7 @@ public final class WorkspaceStoreViewModel: ObservableObject {
         activePanel = nil
         isShowingHub = true
         isShowingNativeAdminSheet = false
+        activeBarcodeScanRequest = nil
         searchQuery = ""
         academyHelpResults = []
         operatorProfile = WorkspaceOperatorProfile()
@@ -728,6 +733,40 @@ public final class WorkspaceStoreViewModel: ObservableObject {
             }
         }
         #endif
+    }
+
+    // MARK: - Pont Matériel Codes-Barres / ISBN Wingman (`barcodeScanner` <-> `window.onNativeBarcodeScanned`)
+
+    public func handleWebBarcodeScannerBridge(action: String, request: NativeBarcodeScanRequest?) {
+        guard isPinUnlocked else { return }
+        if action == "stop" {
+            activeBarcodeScanRequest = nil
+            return
+        }
+        isShowingNativeAdminSheet = false
+        WorkspaceHaptics.medium()
+        activeBarcodeScanRequest = request ?? NativeBarcodeScanRequest()
+    }
+
+    public func forwardScannedBarcodeToWeb(
+        code: String,
+        symbology: String,
+        mode: NativeBarcodeScanMode,
+        totalCount: Int,
+        fieldContext: String
+    ) {
+        webController.deliverScannedBarcode(
+            code: code,
+            symbology: symbology,
+            mode: mode,
+            totalCount: totalCount,
+            fieldContext: fieldContext
+        )
+    }
+
+    public func handleBarcodeScannerClosed(mode: NativeBarcodeScanMode, entries: [ScannedBarcodeEntry]) {
+        activeBarcodeScanRequest = nil
+        webController.notifyBarcodeScannerClosed(mode: mode, entries: entries)
     }
 
     // MARK: - Normalisation Recherche Française Sans Accents
