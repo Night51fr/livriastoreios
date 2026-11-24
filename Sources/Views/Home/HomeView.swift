@@ -35,6 +35,8 @@ public struct HomeView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     heroWelcomeBanner
 
+                    dailyNewReleasesEntryBanner
+
                     smartRecommendationSection
 
                     if !store.favoriteBooks.isEmpty {
@@ -225,6 +227,94 @@ public struct HomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         )
         .shadow(color: LivriaPalette.primary.opacity(0.26), radius: 14, x: 0, y: 6)
+    }
+
+    // MARK: - 1b. Bannière Interactive « ✨ Les nouvelles sorties du jour »
+
+    private var dailyNewReleasesEntryBanner: some View {
+        let todayCount = store.todayNewReleasesCount
+        let previewBooks = Array(
+            ((store.dailyNewReleases?.todayBooks.isEmpty == false ? store.dailyNewReleases?.todayBooks : store.dailyNewReleases?.recentBooks)
+             ?? store.newestCatalogBooks).prefix(3)
+        )
+
+        return Button {
+            store.openDailyReleases()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [LivriaPalette.primary, LivriaPalette.coral],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("✨ Les nouvelles sorties du jour")
+                            .font(.system(size: 15.5, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaPalette.ink)
+                            .lineLimit(1)
+
+                        if todayCount > 0 {
+                            Text("+\(todayCount)")
+                                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(LivriaPalette.coral))
+                                .foregroundStyle(.white)
+                        }
+                    }
+
+                    Text(todayCount > 0
+                         ? "\(todayCount) nouveauté\(todayCount > 1 ? "s" : "") ajoutée\(todayCount > 1 ? "s" : "") aujourd'hui • Voir toute la sélection"
+                         : "Découvrez les parutions du jour et les derniers arrivages")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 4)
+
+                if !previewBooks.isEmpty {
+                    HStack(spacing: -10) {
+                        ForEach(previewBooks) { b in
+                            LivriaBookCoverView(
+                                coverUrl: b.coverUrl,
+                                title: b.title,
+                                width: 32,
+                                height: 46,
+                                cornerRadius: 6
+                            )
+                        }
+                    }
+                }
+
+                Image(systemName: "chevron.right.circle.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(LivriaPalette.cardPaper)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LivriaPalette.primary.opacity(0.24), lineWidth: 1.2)
+            )
+            .shadow(color: LivriaPalette.primary.opacity(0.08), radius: 10, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 2. Algorithme de Recommandation (< 5 livres -> Affiche les plus récemment ajoutés)

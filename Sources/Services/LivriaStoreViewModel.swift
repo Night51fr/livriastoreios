@@ -12,8 +12,13 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var isShowingAuthSheet: Bool = false
     @Published public var isShowingTermsReviewSheet: Bool = false
     @Published public var isShowingISBNScannerSheet: Bool = false
+    @Published public var isShowingDailyReleasesSheet: Bool = false
+    @Published public var dailyNewReleases: LivriaDailyReleasesResponse? = nil
+    @Published public var isLoadingDailyReleases: Bool = false
+    @Published public var notificationInbox: [LivriaMobileNotificationItem] = []
     @Published public var scannedBookForDetail: LivriaBook? = nil
     @Published public var pendingDeepLinkedBookId: Int? = nil
+    private var pendingOpenDailyReleases: Bool = false
     @Published public var activeToastMessage: String? = nil
     @Published public var isInitialBootstrapping: Bool = true
     @Published public var isLoading: Bool = false
@@ -88,6 +93,9 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var userPreferences: LivriaUserPreferences = LivriaUserPreferences()
     @Published public var lastDiagnosticsPing: LivriaDiagnosticsPingResponse? = nil
 
+    private var lastTelemetryFingerprint: String = ""
+    private var lastTelemetrySentAt: Date = .distantPast
+
     private let defaults = UserDefaults.standard
     private let acceptedTermsKey = "livria.store.ios.acceptedCGU.v1"
     private let savedThemeKey = "livria.store.ios.selectedThemeId.v2"
@@ -148,6 +156,9 @@ public final class LivriaStoreViewModel: ObservableObject {
                 withAnimation(.easeInOut(duration: 0.45)) {
                     self.isInitialBootstrapping = false
                 }
+                self.consumePendingNavigationAfterBootstrap()
+                LivriaNotificationManager.shared.attachedStore = self
+                LivriaNotificationManager.shared.consumePendingDeepLinkIfNeeded()
                 await checkCrossAppVipleAccount()
             }
         } else {
@@ -162,6 +173,9 @@ public final class LivriaStoreViewModel: ObservableObject {
                 withAnimation(.easeInOut(duration: 0.45)) {
                     self.isInitialBootstrapping = false
                 }
+                self.consumePendingNavigationAfterBootstrap()
+                LivriaNotificationManager.shared.attachedStore = self
+                LivriaNotificationManager.shared.consumePendingDeepLinkIfNeeded()
                 await checkCrossAppVipleAccount()
             }
         }
@@ -173,6 +187,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             hasAcceptedTermsOfUse = true
         }
         Task {
+            _ = await LivriaNotificationManager.shared.requestPermissionIfNeeded(promptIfNotDetermined: true)
             await checkCrossAppVipleAccount()
         }
     }
@@ -541,6 +556,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             defaults.removeObject(forKey: savedUserIdKey)
             defaults.removeObject(forKey: savedGuestEmailKey)
             clearLocalCrossAppSession()
+            let previousUser = currentUser
             let freshGuest = getOrCreateGuestEmail()
             isAuthenticated = false
             currentUser = nil
@@ -549,6 +565,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             orders = []
             selectedMainTab = 0
             showToast(msg)
+            await LivriaNotificationManager.shared.handleSignOut(previousUser: previousUser)
             await LivriaAPIClient.shared.clearCrossAppSession()
             await refreshBootstrap(email: freshGuest, userId: nil)
         } catch {
@@ -557,6 +574,7 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func signOut() {
+        let previousUser = currentUser
         defaults.removeObject(forKey: savedEmailKey)
         defaults.removeObject(forKey: savedUserIdKey)
         defaults.removeObject(forKey: savedGuestEmailKey)
@@ -568,6 +586,7 @@ public final class LivriaStoreViewModel: ObservableObject {
         orders = []
         showToast("Vous naviguez désormais en mode Invité sur Livria Store.")
         Task {
+            await LivriaNotificationManager.shared.handleSignOut(previousUser: previousUser)
             await LivriaAPIClient.shared.clearCrossAppSession()
             await refreshBootstrap(email: guestEmail, userId: nil)
         }
@@ -599,37 +618,30 @@ public final class LivriaStoreViewModel: ObservableObject {
     }
 
     public func checkCrossAppVipleAccount(forcePrompt: Bool = false) async {
-        // Si l'utilisateur est déjà connecté à un vrai compte Viple (non invité), on annonce sa session
+        // Si l'application est déjà connectée à un compte Viple Live ID, ne JAMAIS proposer de connexion automatique
         if isAuthenticated, let u = currentUser, !u.isGuestAccount {
+            isShowingCrossAppSSOPrompt = false
+            detectedCrossAppAccount = nil
             saveLocalCrossAppSession(user: u)
             await LivriaAPIClient.shared.announceCrossAppSession(userId: u.id, email: u.email)
+            return
+        }
+        if isAuthenticated {
+            isShowingCrossAppSSOPrompt = false
+            detectedCrossAppAccount = nil
+            return
         }
 
-        // Recherche d'un compte Viple actif sur l'autre application (Livria Social)
-        var candidate: LivriaCrossAppAccount? = await LivriaAPIClient.shared.discoverCrossAppAccount()
-
-        if candidate == nil,
-           let sharedData = sharedGroupDefaults?.data(forKey: "viple.crossapp.social.account"),
-           let localDecoded = try? JSONDecoder().decode(LivriaCrossAppAccount.self, from: sharedData) {
-            candidate = localDecoded
-        }
+        // Recherche uniquement par concordance stricte (identifiant du téléphone + adresse IP simultanément)
+        let candidate: LivriaCrossAppAccount? = await LivriaAPIClient.shared.discoverCrossAppAccount()
 
         guard let found = candidate,
               found.userId > 0,
               !found.email.isEmpty,
               !found.email.lowercased().hasSuffix("@guest.livria.store") else {
+            isShowingCrossAppSSOPrompt = false
+            detectedCrossAppAccount = nil
             return
-        }
-
-        // Si on est déjà connecté au même compte Viple sur Livria Store, ne rien proposer
-        if isAuthenticated, let current = currentUser, !current.isGuestAccount {
-            if current.id == found.userId || current.email.lowercased() == found.email.lowercased() {
-                if detectedCrossAppAccount?.userId == found.userId {
-                    isShowingCrossAppSSOPrompt = false
-                    detectedCrossAppAccount = nil
-                }
-                return
-            }
         }
 
         self.detectedCrossAppAccount = found
@@ -715,8 +727,10 @@ public final class LivriaStoreViewModel: ObservableObject {
                     return !g.isEmpty && lower != "inconnu" && lower != "null" && lower != "undefined"
                 }
             if let pendingId = self.pendingDeepLinkedBookId,
+               !self.isInitialBootstrapping,
                let targetBook = boot.books.first(where: { $0.id == pendingId }) {
                 self.pendingDeepLinkedBookId = nil
+                self.isShowingDailyReleasesSheet = false
                 self.scannedBookForDetail = targetBook
             }
             self.cart = boot.cart
@@ -732,11 +746,19 @@ public final class LivriaStoreViewModel: ObservableObject {
             }
 
             if !incomingUser.isGuestAccount {
+                self.isShowingCrossAppSSOPrompt = false
+                self.detectedCrossAppAccount = nil
                 defaults.set(incomingUser.email, forKey: savedEmailKey)
                 saveLocalCrossAppSession(user: incomingUser)
             }
             defaults.set(incomingUser.id, forKey: savedUserIdKey)
             self.isServerUnreachable = false
+
+            await loadDailyNewReleases()
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: incomingUser)
+            if !self.isInitialBootstrapping {
+                consumePendingNavigationAfterBootstrap()
+            }
         } catch {
             print("[LivriaStore.iOS] Erreur bootstrap: \(error.localizedDescription)")
             self.serverUnreachableMessage = LivriaAPIClient.serverLunchBreakMessage
@@ -822,10 +844,22 @@ public final class LivriaStoreViewModel: ObservableObject {
         payload["bookId"] = bookId
         payload["format"] = format
         payload["quantity"] = quantity
+        let matchedBook = books.first(where: { $0.id == bookId })
         do {
             let res = try await LivriaAPIClient.shared.postRaw("/cart/add", body: payload)
             let msg = (res["message"] as? String) ?? "Ajouté au panier (\(format)) !"
             showToast(msg)
+            trackUserActivity(
+                eventType: "cart_add",
+                category: "Panier, Favoris & Commandes",
+                subCategory: "Ajout au panier",
+                actionLabel: "Ajout au panier (\(format) ×\(quantity))",
+                detail: matchedBook != nil ? "\(matchedBook!.title) · \(format) · Qté \(quantity)" : "Livre #\(bookId) · \(format)",
+                book: matchedBook,
+                itemId: String(bookId),
+                itemTitle: matchedBook?.title,
+                screen: "ios://livria/panier/add/\(bookId)"
+            )
             await refreshBootstrap()
         } catch {
             showToast(error.localizedDescription)
@@ -837,8 +871,20 @@ public final class LivriaStoreViewModel: ObservableObject {
         payload["bookId"] = bookId
         payload["format"] = format
         payload["quantity"] = quantity
+        let matchedBook = books.first(where: { $0.id == bookId })
         do {
             _ = try await LivriaAPIClient.shared.postRaw("/cart/update", body: payload)
+            trackUserActivity(
+                eventType: quantity <= 0 ? "cart_remove" : "cart_update",
+                category: "Panier, Favoris & Commandes",
+                subCategory: quantity <= 0 ? "Retrait du panier" : "Modification quantité panier",
+                actionLabel: quantity <= 0 ? "Retiré du panier (\(format))" : "Panier mis à jour (\(format) ×\(quantity))",
+                detail: matchedBook?.title ?? "Livre #\(bookId)",
+                book: matchedBook,
+                itemId: String(bookId),
+                itemTitle: matchedBook?.title,
+                screen: "ios://livria/panier"
+            )
             await refreshBootstrap()
         } catch {
             showToast(error.localizedDescription)
@@ -1404,8 +1450,10 @@ public final class LivriaStoreViewModel: ObservableObject {
         let pathParts = url.pathComponents.filter { $0 != "/" }
         let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
 
-        // Si Livria Social transmet le compte Viple actif dans les paramètres du lien, on le propose immédiatement
-        if let ssoUidStr = queryItems.first(where: { $0.name == "ssoUid" })?.value,
+        // Si Livria Social transmet le compte Viple actif dans les paramètres du lien, on ne le propose QUE si l'app n'est pas déjà connectée
+        let isAlreadyConnected = isAuthenticated && currentUser?.isGuestAccount == false
+        if !isAlreadyConnected,
+           let ssoUidStr = queryItems.first(where: { $0.name == "ssoUid" })?.value,
            let ssoUid = Int(ssoUidStr),
            ssoUid > 0,
            let ssoEmail = queryItems.first(where: { $0.name == "ssoEmail" })?.value,
@@ -1426,19 +1474,40 @@ public final class LivriaStoreViewModel: ObservableObject {
                 xp: 100,
                 isLivriaPlus: false
             )
-            let isAlreadySameUser = isAuthenticated
-                && currentUser?.isGuestAccount == false
-                && (currentUser?.id == ssoUid || currentUser?.email.lowercased() == ssoEmail.lowercased())
-            if !isAlreadySameUser {
-                self.detectedCrossAppAccount = incomingAccount
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    self.isShowingCrossAppSSOPrompt = true
-                }
+            self.detectedCrossAppAccount = incomingAccount
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                self.isShowingCrossAppSSOPrompt = true
+            }
+        } else if isAlreadyConnected {
+            self.isShowingCrossAppSSOPrompt = false
+            self.detectedCrossAppAccount = nil
+        }
+
+        if !isAlreadyConnected {
+            Task {
+                await checkCrossAppVipleAccount(forcePrompt: true)
             }
         }
 
-        Task {
-            await checkCrossAppVipleAccount(forcePrompt: true)
+        // Ouverture directe de la vue « Les nouvelles sorties du jour »
+        let isDailyReleasesRoute =
+            host == "nouvelles-sorties" ||
+            host == "daily-releases" ||
+            host == "new-releases" ||
+            pathParts.contains(where: {
+                let p = $0.lowercased()
+                return p == "nouvelles-sorties" || p == "daily-releases" || p == "new-releases"
+            })
+        if isDailyReleasesRoute {
+            if isInitialBootstrapping {
+                pendingOpenDailyReleases = true
+            } else {
+                presentDailyReleasesSafely()
+                Task {
+                    await loadDailyNewReleases()
+                }
+            }
+            return
         }
 
         // Ouverture directe de l'onglet Troc depuis Livria Marketplace (livriastore://troc)
@@ -1470,13 +1539,132 @@ public final class LivriaStoreViewModel: ObservableObject {
 
         guard let bookId = extractedBookId, bookId > 0 else { return }
 
+        if isInitialBootstrapping {
+            pendingDeepLinkedBookId = bookId
+            Task {
+                if !self.books.contains(where: { $0.id == bookId }),
+                   let detail = try? await LivriaAPIClient.shared.fetchBookDetails(bookId: bookId) {
+                    if !self.books.contains(where: { $0.id == detail.book.id }) {
+                        self.books.insert(detail.book, at: 0)
+                    }
+                }
+                if !self.isInitialBootstrapping {
+                    self.consumePendingNavigationAfterBootstrap()
+                }
+            }
+            return
+        }
+
         if let found = books.first(where: { $0.id == bookId }) {
             pendingDeepLinkedBookId = nil
-            scannedBookForDetail = found
+            presentBookDetailSafely(found)
         } else {
             pendingDeepLinkedBookId = bookId
             Task {
+                if let detail = try? await LivriaAPIClient.shared.fetchBookDetails(bookId: bookId) {
+                    self.pendingDeepLinkedBookId = nil
+                    if !self.books.contains(where: { $0.id == detail.book.id }) {
+                        self.books.insert(detail.book, at: 0)
+                    }
+                    self.presentBookDetailSafely(detail.book)
+                    return
+                }
                 await refreshBootstrap()
+            }
+        }
+    }
+
+    private func presentDailyReleasesSafely() {
+        if scannedBookForDetail != nil {
+            scannedBookForDetail = nil
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 280_000_000)
+                self.isShowingDailyReleasesSheet = true
+            }
+        } else {
+            isShowingDailyReleasesSheet = true
+        }
+    }
+
+    private func presentBookDetailSafely(_ book: LivriaBook) {
+        if isShowingDailyReleasesSheet {
+            isShowingDailyReleasesSheet = false
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 280_000_000)
+                self.scannedBookForDetail = book
+            }
+        } else {
+            scannedBookForDetail = book
+        }
+    }
+
+    public var todayNewReleasesCount: Int {
+        if let resp = dailyNewReleases {
+            return resp.todayCount
+        }
+        return books.filter(\.isAddedTodayParis).count
+    }
+
+    public func openDailyReleases() {
+        triggerHaptic()
+        presentDailyReleasesSafely()
+        trackUserActivity(
+            eventType: "page_view",
+            category: "Navigation & Pages visitées",
+            subCategory: "Nouvelles sorties du jour",
+            actionLabel: "Ouverture de « Les nouvelles sorties du jour »",
+            detail: "\(todayNewReleasesCount) nouveauté(s) aujourd'hui",
+            itemTitle: "Les nouvelles sorties du jour",
+            screen: "ios://livria/nouvelles-sorties"
+        )
+        Task {
+            await loadDailyNewReleases()
+        }
+    }
+
+    public func loadDailyNewReleases() async {
+        isLoadingDailyReleases = true
+        defer { isLoadingDailyReleases = false }
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey)
+        let cid = currentUser?.cid
+        if let res = try? await LivriaAPIClient.shared.fetchDailyNewReleases(
+            days: 14,
+            userId: uid > 0 ? uid : nil,
+            email: email,
+            cid: cid
+        ) {
+            self.dailyNewReleases = res
+        }
+    }
+
+    private func consumePendingNavigationAfterBootstrap() {
+        if pendingOpenDailyReleases {
+            pendingOpenDailyReleases = false
+            scannedBookForDetail = nil
+            isShowingDailyReleasesSheet = true
+            Task {
+                await loadDailyNewReleases()
+            }
+            return
+        }
+
+        if let pendingId = pendingDeepLinkedBookId {
+            if let found = books.first(where: { $0.id == pendingId }) {
+                pendingDeepLinkedBookId = nil
+                isShowingDailyReleasesSheet = false
+                scannedBookForDetail = found
+            } else {
+                Task {
+                    if let detail = try? await LivriaAPIClient.shared.fetchBookDetails(bookId: pendingId) {
+                        self.pendingDeepLinkedBookId = nil
+                        if !self.books.contains(where: { $0.id == detail.book.id }) {
+                            self.books.insert(detail.book, at: 0)
+                        }
+                        self.isShowingDailyReleasesSheet = false
+                        self.scannedBookForDetail = detail.book
+                    }
+                }
             }
         }
     }
@@ -1495,14 +1683,84 @@ public final class LivriaStoreViewModel: ObservableObject {
         favoriteBookIds.contains(bookId)
     }
 
+    public func trackUserActivity(
+        eventType: String,
+        category: String,
+        subCategory: String? = nil,
+        actionLabel: String? = nil,
+        detail: String? = nil,
+        book: LivriaBook? = nil,
+        imageUrl: String? = nil,
+        priceEur: Double? = nil,
+        isbn: String? = nil,
+        genre: String? = nil,
+        author: String? = nil,
+        itemId: String? = nil,
+        itemTitle: String? = nil,
+        screen: String? = nil
+    ) {
+        let resolvedItemId = itemId ?? (book != nil ? String(book!.id) : nil)
+        let resolvedTitle = itemTitle ?? book?.title
+        let fp = "\(eventType)|\(resolvedItemId ?? "")|\(resolvedTitle ?? "")|\(screen ?? "")"
+        let now = Date()
+        if fp == lastTelemetryFingerprint && now.timeIntervalSince(lastTelemetrySentAt) < 2.2 {
+            return
+        }
+        lastTelemetryFingerprint = fp
+        lastTelemetrySentAt = now
+
+        let resolvedCover = imageUrl ?? book?.coverUrl
+        let resolvedPrice = priceEur ?? book?.price
+        let resolvedIsbn = isbn ?? book?.isbn
+        let resolvedGenre = genre ?? book?.displayGenre ?? book?.genre
+        let resolvedAuthor = author ?? book?.author
+
+        LivriaAPIClient.shared.sendVipleTelemetry(
+            userEmail: currentUser?.email ?? defaults.string(forKey: savedEmailKey),
+            userCid: currentUser?.cid,
+            livriaUserId: currentUser?.id,
+            eventType: eventType,
+            category: category,
+            subCategory: subCategory,
+            actionLabel: actionLabel,
+            detail: detail,
+            imageUrl: resolvedCover,
+            priceEur: resolvedPrice,
+            isbn: resolvedIsbn,
+            genre: resolvedGenre,
+            author: resolvedAuthor,
+            itemId: resolvedItemId,
+            itemTitle: resolvedTitle,
+            screen: screen
+        )
+    }
+
     public func toggleFavoriteBook(_ book: LivriaBook) {
         triggerHaptic()
         if favoriteBookIds.contains(book.id) {
             favoriteBookIds.remove(book.id)
             showToast("Retiré de vos coups de cœur (\(book.title))")
+            trackUserActivity(
+                eventType: "favorite_remove",
+                category: "Panier, Favoris & Commandes",
+                subCategory: "Retrait des favoris",
+                actionLabel: "Livre retiré des favoris",
+                detail: "\(book.title) — \(book.author)",
+                book: book,
+                screen: "ios://livria/favoris/remove/\(book.id)"
+            )
         } else {
             favoriteBookIds.insert(book.id)
             showToast("❤️ Ajouté à vos coups de cœur (\(book.title))")
+            trackUserActivity(
+                eventType: "favorite_add",
+                category: "Panier, Favoris & Commandes",
+                subCategory: "Ajout aux favoris",
+                actionLabel: "Livre ajouté aux favoris",
+                detail: "\(book.title) — \(book.author)",
+                book: book,
+                screen: "ios://livria/favoris/add/\(book.id)"
+            )
         }
         defaults.set(Array(favoriteBookIds), forKey: savedFavoritesKey)
     }
@@ -1511,8 +1769,31 @@ public final class LivriaStoreViewModel: ObservableObject {
         books.filter { favoriteBookIds.contains($0.id) }
     }
 
+    public func recordBookDetailOpened(_ book: LivriaBook, sourceScreen: String = "BookDetail") {
+        var updated = recentlyViewedBookIds.filter { $0 != book.id }
+        updated.insert(book.id, at: 0)
+        if updated.count > 20 {
+            updated = Array(updated.prefix(20))
+        }
+        recentlyViewedBookIds = updated
+        defaults.set(updated, forKey: savedRecentlyViewedKey)
+        trackUserActivity(
+            eventType: "book_view",
+            category: "Livres & Fiches consultées",
+            subCategory: "Consultation fiche livre",
+            actionLabel: "A consulté la fiche du livre « \(book.title) »",
+            detail: "\(book.author) · \(book.displayGenre) · \(String(format: "%.2f €", book.price))",
+            book: book,
+            screen: "ios://livria/\(sourceScreen)/\(book.id)"
+        )
+    }
+
     public func recordBookViewed(_ bookId: Int) {
         guard bookId > 0 else { return }
+        if let b = books.first(where: { $0.id == bookId }) {
+            recordBookDetailOpened(b, sourceScreen: "BookDetail")
+            return
+        }
         var updated = recentlyViewedBookIds.filter { $0 != bookId }
         updated.insert(bookId, at: 0)
         if updated.count > 20 {
@@ -1520,6 +1801,14 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
         recentlyViewedBookIds = updated
         defaults.set(updated, forKey: savedRecentlyViewedKey)
+        trackUserActivity(
+            eventType: "book_view",
+            category: "Livres & Fiches consultées",
+            subCategory: "Consultation fiche livre",
+            actionLabel: "A consulté la fiche livre #\(bookId)",
+            itemId: String(bookId),
+            screen: "ios://livria/BookDetail/\(bookId)"
+        )
     }
 
     public func clearRecentlyViewedBooks() {
@@ -1544,6 +1833,15 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
         recentSearchQueries = updated
         defaults.set(updated, forKey: savedRecentSearchesKey)
+        trackUserActivity(
+            eventType: "search",
+            category: "Recherches & Filtres",
+            subCategory: "Recherche catalogue",
+            actionLabel: "Recherche : « \(trimmed) »",
+            detail: "Requête saisie dans la Boutique iOS",
+            itemTitle: trimmed,
+            screen: "ios://livria/boutique/search"
+        )
     }
 
     public func removeRecentSearch(_ query: String) {

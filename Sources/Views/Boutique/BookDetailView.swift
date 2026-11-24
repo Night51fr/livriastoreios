@@ -100,7 +100,7 @@ public struct BookDetailView: View {
                 .environmentObject(store)
         }
         .task {
-            store.recordBookViewed(book.id)
+            store.recordBookDetailOpened(currentBook, sourceScreen: "BookDetail")
             personalNoteText = store.readingNote(for: book.id)
             await loadBookDetails()
         }

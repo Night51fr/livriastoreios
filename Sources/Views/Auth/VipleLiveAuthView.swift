@@ -62,7 +62,8 @@ public struct VipleLiveAuthView: View {
                     if store.pendingAppleOnboardingUserId != nil {
                         applePostSignupOnboardingCard
                     } else {
-                        if let account = store.detectedCrossAppAccount {
+                        if (!store.isAuthenticated || store.currentUser?.isGuestAccount == true),
+                           let account = store.detectedCrossAppAccount {
                             crossAppDetectedBanner(account: account)
                         }
                         modePickerCard

@@ -80,11 +80,60 @@ public struct MainTabView: View {
             }
             .tint(LivriaPalette.primary)
             .onChange(of: store.selectedMainTab) { _, newTab in
+                let tabLabel: String = {
+                    switch newTab {
+                    case 0: return "Accueil"
+                    case 1: return "Boutique"
+                    case 2: return "Troc de livres"
+                    case 3: return "Looby+"
+                    case 4: return "Mon Profil"
+                    default: return "Onglet \(newTab)"
+                    }
+                }()
+                store.trackUserActivity(
+                    eventType: "page_view",
+                    category: "Navigation & Pages visitées",
+                    subCategory: "Navigation onglet iOS",
+                    actionLabel: "Ouverture de l'onglet « \(tabLabel) »",
+                    detail: "Application iOS Livria Store",
+                    itemTitle: tabLabel,
+                    screen: "ios://livria/tab/\(tabLabel.lowercased())"
+                )
                 Task {
                     await store.refreshPaymentSettings()
                 }
                 if !store.isAuthenticated && newTab == 2 {
                     store.isShowingAuthSheet = true
+                }
+            }
+            .onChange(of: store.isShowingCartSheet) { _, isShown in
+                if isShown {
+                    let firstCartBook = store.cart.first.flatMap { ci in store.books.first(where: { $0.id == ci.bookId }) }
+                    store.trackUserActivity(
+                        eventType: "page_view",
+                        category: "Navigation & Pages visitées",
+                        subCategory: "Ouverture du panier",
+                        actionLabel: "Consultation du panier (\(store.cartItemsCount) article(s))",
+                        detail: String(format: "Sous-total : %.2f €", store.cartSubtotal),
+                        book: firstCartBook,
+                        itemTitle: "Panier Livria Store",
+                        screen: "ios://livria/panier"
+                    )
+                }
+            }
+            .onChange(of: store.isShowingCheckoutSheet) { _, isShown in
+                if isShown {
+                    let firstCartBook = store.cart.first.flatMap { ci in store.books.first(where: { $0.id == ci.bookId }) }
+                    store.trackUserActivity(
+                        eventType: "checkout_start",
+                        category: "Panier, Favoris & Commandes",
+                        subCategory: "Tunnel de commande",
+                        actionLabel: "Démarrage du paiement (\(store.cartItemsCount) article(s))",
+                        detail: String(format: "Total : %.2f €", store.cartTotal),
+                        book: firstCartBook,
+                        itemTitle: "Tunnel Checkout",
+                        screen: "ios://livria/checkout"
+                    )
                 }
             }
 
@@ -109,8 +158,10 @@ public struct MainTabView: View {
                 .zIndex(99)
             }
 
-            // Proposition automatique de connexion Viple Live ID inter-applications (depuis Livria Social)
-            if store.isShowingCrossAppSSOPrompt, let account = store.detectedCrossAppAccount {
+            // Proposition automatique de connexion Viple Live ID inter-applications (uniquement si non connecté)
+            if (!store.isAuthenticated || store.currentUser?.isGuestAccount == true),
+               store.isShowingCrossAppSSOPrompt,
+               let account = store.detectedCrossAppAccount {
                 LivriaStoreCrossAppSSOPromptView(account: account)
                     .environmentObject(store)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -133,6 +184,13 @@ public struct MainTabView: View {
             LivriaStoreLegalTermsView(isFirstLaunchGate: false)
                 .environmentObject(store)
         }
+        .sheet(isPresented: $store.isShowingDailyReleasesSheet) {
+            NavigationStack {
+                DailyNewReleasesView()
+                    .environmentObject(store)
+                    .environmentObject(LivriaNotificationManager.shared)
+            }
+        }
         .sheet(item: $store.scannedBookForDetail) { scannedBook in
             ZStack {
                 NavigationStack {
@@ -146,7 +204,9 @@ public struct MainTabView: View {
                         }
                 }
 
-                if store.isShowingCrossAppSSOPrompt, let account = store.detectedCrossAppAccount {
+                if (!store.isAuthenticated || store.currentUser?.isGuestAccount == true),
+                   store.isShowingCrossAppSSOPrompt,
+                   let account = store.detectedCrossAppAccount {
                     LivriaStoreCrossAppSSOPromptView(account: account)
                         .environmentObject(store)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))

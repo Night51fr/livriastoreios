@@ -284,6 +284,56 @@ public struct PassportProfileView: View {
             Text("Préférences & Hors-Ligne")
                 .font(.system(size: 18, weight: .black, design: .rounded))
 
+            // Rappel quotidien & Flamme (1×/jour)
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: $vm.dailyRemindersEnabled) {
+                    HStack(spacing: 10) {
+                        Image(systemName: vm.dailyRemindersEnabled ? "bell.badge.fill" : "bell.slash.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(vm.dailyRemindersEnabled ? AcademyPalette.copper : AcademyPalette.inkMuted)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                Circle()
+                                    .fill(vm.dailyRemindersEnabled ? AcademyPalette.copperSoft : AcademyPalette.surfaceSubtle)
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Rappel quotidien & Flamme (1×/jour)")
+                                .font(.system(size: 13.5, weight: .heavy, design: .rounded))
+                                .foregroundStyle(AcademyPalette.ink)
+                            Text("Cours en cours ou maintien de votre série (jamais plus d'une notification par jour)")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(AcademyPalette.inkSecondary)
+                        }
+                    }
+                }
+                .tint(AcademyPalette.pine)
+
+                if vm.dailyRemindersEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Heure préférée du rappel quotidien")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(AcademyPalette.inkSecondary)
+                        Picker("Heure de rappel", selection: $vm.reminderTimeSlot) {
+                            ForEach(AcademyReminderTimeSlot.allCases) { slot in
+                                Text(slot.displayLabel).tag(slot)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(AcademyPalette.surfaceSubtle)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(AcademyPalette.border, lineWidth: 1)
+                    )
+            )
+            .animation(.spring(response: 0.34, dampingFraction: 0.84), value: vm.dailyRemindersEnabled)
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Apparence visuelle")
                     .font(.system(size: 12.5, weight: .bold, design: .rounded))

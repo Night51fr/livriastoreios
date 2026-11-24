@@ -46,6 +46,12 @@ public struct BoutiqueView: View {
         case titleAz = "Titre A-Z"
     }
 
+    private struct BoutiqueScrollMetrics: Equatable, Sendable {
+        var offsetY: CGFloat
+        var maxScrollY: CGFloat
+        var viewportHeight: CGFloat
+    }
+
     @State private var searchScope: SearchScope = .books
     @State private var searchText: String = ""
     @State private var selectedGenre: String = "Tous"
@@ -57,7 +63,46 @@ public struct BoutiqueView: View {
     @State private var showingLoobySocialWaitAlert: Bool = false
     @State private var pendingWebMemberProfileUrl: String = ""
 
+    // États d'affichage dynamique du panneau Recherche + Filtres au swipe
+    @State private var isScrolledPastTop: Bool = false
+    @State private var isManuallyExpanded: Bool = false
+    @State private var isForceCollapsedBySwipe: Bool = false
+    @State private var isFingerTouchingScroll: Bool = false
+    @State private var isUserScrollGestureActive: Bool = false
+    @State private var dragStartOffsetY: CGFloat = 0
+    @State private var currentScrollOffsetY: CGFloat = 0
+    @State private var measuredBooksDrawerHeight: CGFloat = 148
+    @State private var measuredMembersDrawerHeight: CGFloat = 64
+    @State private var scrollViewportHeight: CGFloat = 520
+    @FocusState private var isSearchFieldFocused: Bool
+
     public init() {}
+
+    private var isFilterDrawerExpanded: Bool {
+        if isManuallyExpanded {
+            return true
+        }
+        if isForceCollapsedBySwipe {
+            return false
+        }
+        return !isScrolledPastTop
+    }
+
+    private var hasActiveSearchOrFilter: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        conditionFilter != .all ||
+        selectedGenre != "Tous" ||
+        maxPriceCeiling > 0 ||
+        sortOption != .popular
+    }
+
+    private var activeDrawerSpacerHeight: CGFloat {
+        if isForceCollapsedBySwipe && !isManuallyExpanded {
+            return 14
+        }
+        let base = searchScope == .books ? measuredBooksDrawerHeight : measuredMembersDrawerHeight
+        return base + 14
+    }
 
     private var filteredBooks: [LivriaBook] {
         var list = store.books
@@ -116,21 +161,64 @@ public struct BoutiqueView: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                searchAndFilterHeader
+                persistentScopeHeader
+                    .zIndex(20)
 
-                if searchScope == .books {
-                    ScrollView(showsIndicators: false) {
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                            ForEach(filteredBooks) { book in
-                                boutiqueBookCard(book: book)
+                ZStack(alignment: .top) {
+                    if searchScope == .books {
+                        ScrollView(showsIndicators: false) {
+                            VStack(spacing: 0) {
+                                Color.clear
+                                    .frame(height: activeDrawerSpacerHeight)
+                                    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isForceCollapsedBySwipe)
+
+                                boutiqueDailyReleasesBanner
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 12)
+
+                                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+                                    ForEach(filteredBooks) { book in
+                                        boutiqueBookCard(book: book)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 100)
                             }
+                            .frame(minHeight: scrollViewportHeight + 2, alignment: .top)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 100)
+                        .onScrollPhaseChange { oldPhase, newPhase in
+                            handleScrollPhaseChange(from: oldPhase, to: newPhase)
+                        }
+                        .onScrollGeometryChange(for: BoutiqueScrollMetrics.self) { geo in
+                            let rawY = geo.contentOffset.y + geo.contentInsets.top
+                            let maxScroll = max(0, geo.contentSize.height - geo.containerSize.height)
+                            return BoutiqueScrollMetrics(
+                                offsetY: (rawY * 2).rounded() / 2,
+                                maxScrollY: (maxScroll * 2).rounded() / 2,
+                                viewportHeight: max(320, (geo.containerSize.height * 2).rounded() / 2)
+                            )
+                        } action: { _, metrics in
+                            handleScrollMetricsUpdate(metrics)
+                        }
+                    } else {
+                        memberSearchResultsView
                     }
-                } else {
-                    memberSearchResultsView
+
+                    // Tiroir rétractable : barre de recherche + catégories d'état + genres (se retire vers le haut au swipe)
+                    VStack(spacing: 0) {
+                        if isFilterDrawerExpanded {
+                            expandableSearchAndCategoriesContent
+                                .transition(
+                                    .asymmetric(
+                                        insertion: .move(edge: .top).combined(with: .opacity),
+                                        removal: .move(edge: .top).combined(with: .opacity)
+                                    )
+                                )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .clipped()
+                    .zIndex(10)
                 }
             }
             .livriaThemedBackground(store.currentThemeId)
@@ -165,9 +253,33 @@ public struct BoutiqueView: View {
             }
             .sheet(isPresented: $showingISBNScanner) {
                 LivriaISBNScannerSheet { foundBook in
+                    store.trackUserActivity(
+                        eventType: "isbn_scan",
+                        category: "Livres & Fiches consultées",
+                        subCategory: "Scan code-barres ISBN",
+                        actionLabel: "Livre scanné via ISBN : « \(foundBook.title) »",
+                        detail: "ISBN \(foundBook.isbn)",
+                        book: foundBook,
+                        screen: "ios://livria/boutique/isbn-scan"
+                    )
                     selectedBook = foundBook
                 }
                 .environmentObject(store)
+            }
+            .task(id: searchText) {
+                let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard q.count >= 2 else { return }
+                try? await Task.sleep(nanoseconds: 750_000_000)
+                guard !Task.isCancelled else { return }
+                store.trackUserActivity(
+                    eventType: searchScope == .books ? "search" : "member_search",
+                    category: "Recherches & Filtres",
+                    subCategory: searchScope == .books ? "Recherche de livres" : "Recherche de membres",
+                    actionLabel: "Recherche \(searchScope.rawValue) : « \(q) »",
+                    detail: searchScope == .books ? "\(filteredBooks.count) ouvrage(s) correspondant(s)" : "\(store.searchedMembers.count) membre(s) trouvé(s)",
+                    itemTitle: q,
+                    screen: "ios://livria/boutique/search"
+                )
             }
             .onChange(of: searchText) { _, newValue in
                 if searchScope == .members {
@@ -177,11 +289,34 @@ public struct BoutiqueView: View {
                 }
             }
             .onChange(of: searchScope) { _, newScope in
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
+                    isScrolledPastTop = false
+                    isManuallyExpanded = false
+                    isForceCollapsedBySwipe = false
+                }
+                store.trackUserActivity(
+                    eventType: "tab_switch",
+                    category: "Navigation & Pages visitées",
+                    subCategory: "Sous-onglet Boutique",
+                    actionLabel: "Bascule Boutique vers « \(newScope.rawValue) »",
+                    itemTitle: newScope.rawValue,
+                    screen: "ios://livria/boutique/\(newScope == .books ? "livres" : "membres")"
+                )
                 if newScope == .members {
                     Task {
                         await store.searchMembers(query: searchText)
                     }
                 }
+            }
+            .onChange(of: sortOption) { _, newSort in
+                store.trackUserActivity(
+                    eventType: "sort_change",
+                    category: "Recherches & Filtres",
+                    subCategory: "Tri du catalogue",
+                    actionLabel: "Tri appliqué : \(newSort.rawValue)",
+                    itemTitle: newSort.rawValue,
+                    screen: "ios://livria/boutique/sort"
+                )
             }
             .alert("LoobySocial", isPresented: $showingLoobySocialWaitAlert) {
                 if let webUrl = URL(string: pendingWebMemberProfileUrl), !pendingWebMemberProfileUrl.isEmpty {
@@ -198,11 +333,156 @@ public struct BoutiqueView: View {
         }
     }
 
-    // MARK: - En-tête de Recherche Double (Livres / Membres) + Filtres Neuf/Occasion
+    // MARK: - Gestion du Swipe / Scroll pour replier ou restaurer le menu Recherche & Catégories
 
-    private var searchAndFilterHeader: some View {
-        VStack(spacing: 10) {
-            // Sélecteur Livres vs Membres avec icônes vectorielles monochromes
+    private var boutiqueDailyReleasesBanner: some View {
+        let count = store.todayNewReleasesCount
+        return Button {
+            store.openDailyReleases()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        LinearGradient(
+                            colors: [LivriaPalette.primary, LivriaPalette.coral],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("✨ Les nouvelles sorties du jour")
+                        .font(.system(size: 13.5, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaPalette.ink)
+                        .lineLimit(1)
+                    Text(count > 0
+                         ? "\(count) parution\(count > 1 ? "s" : "") ajoutée\(count > 1 ? "s" : "") aujourd'hui"
+                         : "Voir les arrivages du jour & nouveautés récentes")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(LivriaPalette.coral))
+                        .foregroundStyle(.white)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .fill(LivriaPalette.cardPaper)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(LivriaPalette.primary.opacity(0.22), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func handleScrollPhaseChange(from oldPhase: ScrollPhase, to newPhase: ScrollPhase) {
+        if newPhase == .interacting {
+            isFingerTouchingScroll = true
+            isUserScrollGestureActive = true
+            dragStartOffsetY = currentScrollOffsetY
+        } else if newPhase == .decelerating {
+            isFingerTouchingScroll = false
+        } else if newPhase == .idle {
+            isFingerTouchingScroll = false
+            isUserScrollGestureActive = false
+        }
+    }
+
+    private func handleScrollMetricsUpdate(_ metrics: BoutiqueScrollMetrics) {
+        if abs(metrics.viewportHeight - scrollViewportHeight) > 4 {
+            scrollViewportHeight = metrics.viewportHeight
+        }
+        let y = metrics.offsetY
+        currentScrollOffsetY = y
+        let deltaFromDragStart = y - dragStartOffsetY
+
+        // 1. Si on reswipe tout tout en haut -> remet automatiquement tout le menu et retire l'icône loupe
+        if isForceCollapsedBySwipe {
+            if isFingerTouchingScroll && y < -14 {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.85)) {
+                    isForceCollapsedBySwipe = false
+                    isScrolledPastTop = false
+                    isManuallyExpanded = false
+                }
+                dragStartOffsetY = y
+                return
+            }
+        } else if y <= 8 && isScrolledPastTop {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.85)) {
+                isScrolledPastTop = false
+                isManuallyExpanded = false
+            }
+            dragStartOffsetY = y
+            return
+        }
+
+        // 2. Si le menu a été ré-affiché via l'icône loupe : reste visible tant qu'on cherche/filtre, et se retire vers le haut dès qu'on reswipe
+        if isManuallyExpanded {
+            guard isFingerTouchingScroll else { return }
+            let swipedDown = deltaFromDragStart > 12
+            let swipedUpAwayFromTop = deltaFromDragStart < -18 && y > 24
+            if swipedDown || swipedUpAwayFromTop {
+                isSearchFieldFocused = false
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    isManuallyExpanded = false
+                    isScrolledPastTop = true
+                    if metrics.maxScrollY < 45 || y <= 28 {
+                        isForceCollapsedBySwipe = true
+                    }
+                }
+                dragStartOffsetY = y
+            }
+            return
+        }
+
+        // 3. Swipe vers le bas dans le catalogue -> replie la recherche et les catégories vers le haut et affiche l'icône loupe
+        guard isUserScrollGestureActive else { return }
+        if !isScrolledPastTop && !isForceCollapsedBySwipe {
+            if y > 26 && deltaFromDragStart > 10 {
+                isSearchFieldFocused = false
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    isScrolledPastTop = true
+                    isManuallyExpanded = false
+                }
+                dragStartOffsetY = y
+            } else if isFingerTouchingScroll && metrics.maxScrollY < 45 && deltaFromDragStart > 16 {
+                isSearchFieldFocused = false
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    isScrolledPastTop = true
+                    isForceCollapsedBySwipe = true
+                    isManuallyExpanded = false
+                }
+                dragStartOffsetY = y
+            }
+        }
+    }
+
+    // MARK: - Barre Persistante « Livres / Membres » + Icône Loupe au Swipe
+
+    private var persistentScopeHeader: some View {
+        HStack(spacing: 8) {
+            // Sélecteur Livres vs Membres toujours persistant en haut
             HStack(spacing: 6) {
                 ForEach(SearchScope.allCases, id: \.self) { scope in
                     let isSelected = searchScope == scope
@@ -241,6 +521,60 @@ public struct BoutiqueView: View {
                     .stroke(LivriaPalette.border, lineWidth: 1)
             )
 
+            // Icône loupe ajoutée uniquement quand le menu est replié après un swipe
+            if !isFilterDrawerExpanded {
+                Button {
+                    store.triggerHaptic()
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        isManuallyExpanded = true
+                        isForceCollapsedBySwipe = false
+                    }
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 15.5, weight: .bold))
+                            .foregroundStyle(hasActiveSearchOrFilter ? .white : LivriaPalette.primary)
+                            .frame(width: 40, height: 39)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(hasActiveSearchOrFilter ? LivriaPalette.primary : LivriaPalette.primarySoft)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(LivriaPalette.border, lineWidth: 1)
+                            )
+
+                        if hasActiveSearchOrFilter {
+                            Circle()
+                                .fill(LivriaPalette.coral)
+                                .frame(width: 9, height: 9)
+                                .overlay(Circle().stroke(LivriaPalette.cardPaper, lineWidth: 1.5))
+                                .offset(x: 2, y: -2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Afficher la barre de recherche et les catégories")
+                .transition(.scale(scale: 0.72).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(LivriaPalette.cardPaper)
+        .overlay(alignment: .bottom) {
+            if !isFilterDrawerExpanded {
+                Rectangle()
+                    .fill(LivriaPalette.border.opacity(0.75))
+                    .frame(height: 0.8)
+            }
+        }
+    }
+
+    // MARK: - Panneau Rétractable : Barre de Recherche + États + Genres
+
+    private var expandableSearchAndCategoriesContent: some View {
+        VStack(spacing: 10) {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -251,7 +585,14 @@ public struct BoutiqueView: View {
                             : "Rechercher un membre public Livria...",
                         text: $searchText
                     )
+                    .focused($isSearchFieldFocused)
                     .textInputAutocapitalization(.never)
+                    .submitLabel(.search)
+                    .onSubmit {
+                        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            store.addRecentSearch(searchText)
+                        }
+                    }
                     if !searchText.isEmpty {
                         Button {
                             searchText = ""
@@ -337,6 +678,14 @@ public struct BoutiqueView: View {
                             let isSelected = conditionFilter == cond
                             Button {
                                 conditionFilter = cond
+                                store.trackUserActivity(
+                                    eventType: "filter_condition",
+                                    category: "Recherches & Filtres",
+                                    subCategory: "Filtre d'état",
+                                    actionLabel: "Filtre état sélectionné : \(cond.rawValue)",
+                                    itemTitle: cond.rawValue,
+                                    screen: "ios://livria/boutique/filter-condition"
+                                )
                             } label: {
                                 HStack(spacing: 5) {
                                     if let iconName = cond.iconName {
@@ -396,14 +745,45 @@ public struct BoutiqueView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(LivriaPalette.cardPaper.opacity(0.95))
+        .padding(.top, 2)
+        .padding(.bottom, 10)
+        .background(LivriaPalette.cardPaper.opacity(0.97))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(LivriaPalette.border.opacity(0.8))
+                .frame(height: 0.8)
+        }
+        .shadow(
+            color: (isScrolledPastTop && isManuallyExpanded) ? Color.black.opacity(0.10) : Color.clear,
+            radius: 10,
+            x: 0,
+            y: 5
+        )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { newHeight in
+            guard newHeight > 20 else { return }
+            if searchScope == .books {
+                measuredBooksDrawerHeight = newHeight
+            } else {
+                measuredMembersDrawerHeight = newHeight
+            }
+        }
     }
 
     private func genreChip(_ genre: String) -> some View {
         let isSelected = selectedGenre == genre
         return Button {
             selectedGenre = genre
+            store.trackUserActivity(
+                eventType: "filter_genre",
+                category: "Recherches & Filtres",
+                subCategory: "Filtre de genre",
+                actionLabel: "Genre sélectionné : \(genre)",
+                genre: genre == "Tous" ? nil : genre,
+                itemTitle: genre,
+                screen: "ios://livria/boutique/filter-genre"
+            )
         } label: {
             Text(genre)
                 .font(.system(size: 12.5, weight: .bold, design: .rounded))
@@ -426,7 +806,7 @@ public struct BoutiqueView: View {
                 if !searchText.isEmpty {
                     store.addRecentSearch(searchText)
                 }
-                store.recordBookViewed(book.id)
+                store.recordBookDetailOpened(book, sourceScreen: "Boutique")
                 selectedBook = book
             } label: {
                 VStack(alignment: .leading, spacing: 8) {
@@ -591,60 +971,80 @@ public struct BoutiqueView: View {
 
     private var memberSearchResultsView: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 12) {
-                ForEach(store.searchedMembers) { member in
-                    HStack(spacing: 14) {
-                        LevelRingView(
-                            avatarUrl: member.avatarUrl,
-                            displayName: member.displayName,
-                            level: member.level,
-                            xp: member.xp,
-                            size: 56
-                        )
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: activeDrawerSpacerHeight)
+                    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isForceCollapsedBySwipe)
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(member.displayName)
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(LivriaPalette.ink)
+                VStack(spacing: 12) {
+                    ForEach(store.searchedMembers) { member in
+                        HStack(spacing: 14) {
+                            LevelRingView(
+                                avatarUrl: member.avatarUrl,
+                                displayName: member.displayName,
+                                level: member.level,
+                                xp: member.xp,
+                                size: 56
+                            )
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(member.displayName)
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundStyle(LivriaPalette.ink)
+                                }
+                                if !member.bio.isEmpty {
+                                    Text(member.bio)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(LivriaPalette.inkMuted)
+                                        .lineLimit(2)
+                                }
+                                if !member.favoriteGenres.isEmpty {
+                                    Text("Genres : \(member.favoriteGenres)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(LivriaPalette.primary)
+                                }
                             }
-                            if !member.bio.isEmpty {
-                                Text(member.bio)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(LivriaPalette.inkMuted)
-                                    .lineLimit(2)
+
+                            Spacer()
+
+                            Button {
+                                openMemberInLivriaSocial(member: member)
+                            } label: {
+                                Label("Profil", systemImage: "person.crop.circle.badge.arrow.forward")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Capsule().fill(LivriaPalette.primarySoft))
+                                    .foregroundStyle(LivriaPalette.primaryDeep)
                             }
-                            if !member.favoriteGenres.isEmpty {
-                                Text("Genres : \(member.favoriteGenres)")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(LivriaPalette.primary)
-                            }
+                            .buttonStyle(.plain)
                         }
-
-                        Spacer()
-
-                        Button {
+                        .livriaCard(padding: 12)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
                             openMemberInLivriaSocial(member: member)
-                        } label: {
-                            Label("Profil", systemImage: "person.crop.circle.badge.arrow.forward")
-                                .font(.system(size: 12, weight: .bold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Capsule().fill(LivriaPalette.primarySoft))
-                                .foregroundStyle(LivriaPalette.primaryDeep)
                         }
-                        .buttonStyle(.plain)
-                    }
-                    .livriaCard(padding: 12)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        openMemberInLivriaSocial(member: member)
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 100)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 100)
+            .frame(minHeight: scrollViewportHeight + 2, alignment: .top)
+        }
+        .onScrollPhaseChange { oldPhase, newPhase in
+            handleScrollPhaseChange(from: oldPhase, to: newPhase)
+        }
+        .onScrollGeometryChange(for: BoutiqueScrollMetrics.self) { geo in
+            let rawY = geo.contentOffset.y + geo.contentInsets.top
+            let maxScroll = max(0, geo.contentSize.height - geo.containerSize.height)
+            return BoutiqueScrollMetrics(
+                offsetY: (rawY * 2).rounded() / 2,
+                maxScrollY: (maxScroll * 2).rounded() / 2,
+                viewportHeight: max(320, (geo.containerSize.height * 2).rounded() / 2)
+            )
+        } action: { _, metrics in
+            handleScrollMetricsUpdate(metrics)
         }
         .task {
             if store.searchedMembers.isEmpty {
@@ -654,6 +1054,17 @@ public struct BoutiqueView: View {
     }
 
     private func openMemberInLivriaSocial(member: LivriaMemberSummary) {
+        store.trackUserActivity(
+            eventType: "profile_view",
+            category: "Réseau Social & Communauté",
+            subCategory: "Consultation profil membre",
+            actionLabel: "Ouverture du profil de \(member.displayName)",
+            detail: member.favoriteGenres.isEmpty ? "Membre Livria" : "Genres : \(member.favoriteGenres)",
+            imageUrl: member.avatarUrl,
+            itemId: String(member.id),
+            itemTitle: member.displayName,
+            screen: "ios://livria/boutique/member/\(member.id)"
+        )
         var components = URLComponents(string: "livriasocial://profile/\(member.id)")
         var qItems: [URLQueryItem] = [URLQueryItem(name: "name", value: member.displayName)]
         if store.isAuthenticated, let u = store.currentUser, !u.isGuestAccount {

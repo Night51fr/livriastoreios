@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2611.21</string>
+	<string>2611.22</string>
 	<key>CFBundleVersion</key>
-	<string>34</string>
+	<string>35</string>
 	<key>ITunesStoreAppId</key>
 	<string>6825159743</string>
 	<key>AppleAppStoreId</key>
@@ -75,6 +75,17 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+		<string>remote-notification</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.viplenetwork.livria.bgrefresh</string>
+		<string>com.viplenetwork.livria.bgprocessing</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

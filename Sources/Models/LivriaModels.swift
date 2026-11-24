@@ -321,12 +321,67 @@ public struct LivriaBook: Codable, Identifiable, Equatable, Hashable, Sendable {
     }
 
     // Métadonnées enrichies Boutique
+    public var createdAt: String? = nil
     public var countryOfOrigin: String?
     public var moodTags: String?
     public var triggerWarnings: String?
     public var aiSummaryNoSpoil: String?
     public var ambientSoundtrack: String?
     public var warehouseLocation: String?
+
+    public var parsedCreatedAtDate: Date? {
+        guard let raw = createdAt?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: raw) { return d }
+
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        if let d = isoPlain.date(from: raw) { return d }
+
+        let fallback = DateFormatter()
+        fallback.locale = Locale(identifier: "en_US_POSIX")
+        fallback.timeZone = TimeZone(secondsFromGMT: 0)
+        for fmt in ["yyyy-MM-dd'T'HH:mm:ss.SSSSSSS", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss"] {
+            fallback.dateFormat = fmt
+            if let d = fallback.date(from: raw) { return d }
+        }
+        return nil
+    }
+
+    public var isAddedTodayParis: Bool {
+        guard let d = parsedCreatedAtDate else { return false }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Paris") ?? .current
+        return cal.isDateInToday(d)
+    }
+
+    public var addedTimeLabelFr: String {
+        guard let d = parsedCreatedAtDate else { return "Ajout récent" }
+        let parisTz = TimeZone(identifier: "Europe/Paris") ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = parisTz
+        let tf = DateFormatter()
+        tf.locale = Locale(identifier: "fr_FR")
+        tf.timeZone = parisTz
+        if cal.isDateInToday(d) {
+            let mins = max(1, Int(Date().timeIntervalSince(d) / 60))
+            tf.dateFormat = "HH'h'mm"
+            let clockStr = tf.string(from: d)
+            if mins < 60 {
+                return "Il y a \(mins) min • \(clockStr)"
+            }
+            return "Aujourd'hui à \(clockStr)"
+        } else if cal.isDateInYesterday(d) {
+            tf.dateFormat = "HH'h'mm"
+            return "Hier à \(tf.string(from: d))"
+        } else {
+            tf.dateFormat = "d MMM"
+            return "Ajouté le \(tf.string(from: d))"
+        }
+    }
 
     public var resolvedCoverURL: URL? {
         LivriaURLResolver.resolve(coverUrl)
@@ -1308,6 +1363,148 @@ public struct LivriaLibraryBookContentResponse: Codable, Equatable, Sendable {
     public var audioStreamUrl: String?
     public var epubStreamUrl: String?
     public var chapters: [LivriaBookChapter]?
+}
+
+// MARK: - Les Nouvelles Sorties du Jour & Notifications Push Intelligentes (/new-releases & /notifications/*)
+
+public struct LivriaDailyReleasesResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var dateParis: String
+    public var dateLabelFr: String
+    public var todayCount: Int
+    public var todayBooks: [LivriaBook]
+    public var recentBooks: [LivriaBook]
+    public var genres: [String]
+    public var spotlightBook: LivriaBook?
+
+    public init(
+        ok: Bool = true,
+        dateParis: String = "",
+        dateLabelFr: String = "",
+        todayCount: Int = 0,
+        todayBooks: [LivriaBook] = [],
+        recentBooks: [LivriaBook] = [],
+        genres: [String] = [],
+        spotlightBook: LivriaBook? = nil
+    ) {
+        self.ok = ok
+        self.dateParis = dateParis
+        self.dateLabelFr = dateLabelFr
+        self.todayCount = todayCount
+        self.todayBooks = todayBooks
+        self.recentBooks = recentBooks
+        self.genres = genres
+        self.spotlightBook = spotlightBook
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ok, dateParis, dateLabelFr, todayCount, todayBooks, recentBooks, genres, spotlightBook
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        dateParis = (try? c.decode(String.self, forKey: .dateParis)) ?? ""
+        dateLabelFr = (try? c.decode(String.self, forKey: .dateLabelFr)) ?? ""
+        let decodedToday = (try? c.decode([LivriaBook].self, forKey: .todayBooks)) ?? []
+        todayBooks = decodedToday
+        todayCount = (try? c.decode(Int.self, forKey: .todayCount)) ?? decodedToday.count
+        recentBooks = (try? c.decode([LivriaBook].self, forKey: .recentBooks)) ?? []
+        genres = (try? c.decode([String].self, forKey: .genres)) ?? []
+        spotlightBook = try? c.decodeIfPresent(LivriaBook.self, forKey: .spotlightBook)
+    }
+}
+
+public struct LivriaMobileNotificationItem: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var id: String
+    public var kind: String // "new_releases" | "daily_rec"
+    public var title: String
+    public var subtitle: String
+    public var body: String
+    public var target: String // "daily-releases" | "book"
+    public var bookId: Int?
+    public var bookTitle: String?
+    public var bookAuthor: String?
+    public var coverUrl: String?
+    public var deepLink: String
+    public var createdAtUtc: String
+    public var isSeen: Bool
+
+    public init(
+        id: String,
+        kind: String,
+        title: String,
+        subtitle: String = "",
+        body: String,
+        target: String,
+        bookId: Int? = nil,
+        bookTitle: String? = nil,
+        bookAuthor: String? = nil,
+        coverUrl: String? = nil,
+        deepLink: String = "livriastore://nouvelles-sorties",
+        createdAtUtc: String = "",
+        isSeen: Bool = false
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+        self.target = target
+        self.bookId = bookId
+        self.bookTitle = bookTitle
+        self.bookAuthor = bookAuthor
+        self.coverUrl = coverUrl
+        self.deepLink = deepLink
+        self.createdAtUtc = createdAtUtc
+        self.isSeen = isSeen
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, title, subtitle, body, target, bookId, bookTitle, bookAuthor, coverUrl, deepLink, createdAtUtc, isSeen
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        kind = (try? c.decode(String.self, forKey: .kind)) ?? "new_releases"
+        title = (try? c.decode(String.self, forKey: .title)) ?? "Livria Store"
+        subtitle = (try? c.decode(String.self, forKey: .subtitle)) ?? ""
+        body = (try? c.decode(String.self, forKey: .body)) ?? ""
+        target = (try? c.decode(String.self, forKey: .target)) ?? "daily-releases"
+        bookId = try? c.decodeIfPresent(Int.self, forKey: .bookId)
+        bookTitle = try? c.decodeIfPresent(String.self, forKey: .bookTitle)
+        bookAuthor = try? c.decodeIfPresent(String.self, forKey: .bookAuthor)
+        coverUrl = try? c.decodeIfPresent(String.self, forKey: .coverUrl)
+        deepLink = (try? c.decode(String.self, forKey: .deepLink)) ?? "livriastore://nouvelles-sorties"
+        createdAtUtc = (try? c.decode(String.self, forKey: .createdAtUtc)) ?? ""
+        isSeen = (try? c.decode(Bool.self, forKey: .isSeen)) ?? false
+    }
+}
+
+public struct LivriaNotificationPollResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var notificationsEnabled: Bool
+    public var newReleasesEnabled: Bool
+    public var dailyRecommendationsEnabled: Bool
+    public var todayReleasesCount: Int
+    public var unseen: [LivriaMobileNotificationItem]
+    public var recent: [LivriaMobileNotificationItem]
+
+    enum CodingKeys: String, CodingKey {
+        case ok, notificationsEnabled, newReleasesEnabled, dailyRecommendationsEnabled, todayReleasesCount, unseen, recent
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        notificationsEnabled = (try? c.decode(Bool.self, forKey: .notificationsEnabled)) ?? true
+        newReleasesEnabled = (try? c.decode(Bool.self, forKey: .newReleasesEnabled)) ?? true
+        dailyRecommendationsEnabled = (try? c.decode(Bool.self, forKey: .dailyRecommendationsEnabled)) ?? true
+        todayReleasesCount = (try? c.decode(Int.self, forKey: .todayReleasesCount)) ?? 0
+        unseen = (try? c.decode([LivriaMobileNotificationItem].self, forKey: .unseen)) ?? []
+        recent = (try? c.decode([LivriaMobileNotificationItem].self, forKey: .recent)) ?? []
+    }
 }
 
 

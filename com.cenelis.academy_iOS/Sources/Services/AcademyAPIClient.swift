@@ -84,6 +84,26 @@ public struct AcademyPinStatusResponse: Codable, Sendable {
     public let verifiedAtUtc: String?
 }
 
+public struct AcademyDailyNudgeResponse: Codable, Sendable {
+    public let ok: Bool
+    public let nudgeId: String
+    public let dateParis: String
+    public let variant: String
+    public let title: String
+    public let subtitle: String
+    public let body: String
+    public let courseId: String
+    public let courseTitle: String?
+    public let courseProgressPct: Int?
+    public let streakDays: Int
+    public let studiedToday: Bool
+    public let deepLink: String
+    public let category: String?
+    public let threadId: String?
+    public let alreadyPushedToday: Bool?
+    public let notificationsEnabled: Bool?
+}
+
 private struct AcademyForbiddenEnvelope: Codable, Sendable {
     let ok: Bool?
     let errorCode: String?
@@ -518,6 +538,95 @@ public final class AcademyAPIClient {
             return false
         }
         return (200..<300).contains(http.statusCode)
+    }
+
+    // MARK: - Notifications Quotidiennes APNs (.p8) & Nudge Arrière-Plan 1×/jour
+
+    public func registerPushDevice(
+        deviceId: String,
+        apnsToken: String,
+        apnsEnvironment: String,
+        appleTeamId: String?,
+        notificationsEnabled: Bool,
+        preferredHourParis: Int,
+        preferredMinuteParis: Int,
+        token: String
+    ) async -> Bool {
+        guard !token.isEmpty else { return false }
+        let url = baseURL.appendingPathComponent("api/mobile/v1/devices/register")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        var payload: [String: Any] = [
+            "deviceId": deviceId,
+            "apnsToken": apnsToken,
+            "apnsEnvironment": apnsEnvironment,
+            "notificationsEnabled": notificationsEnabled,
+            "preferredHourParis": preferredHourParis,
+            "preferredMinuteParis": preferredMinuteParis
+        ]
+        if let appleTeamId, !appleTeamId.isEmpty {
+            payload["appleTeamId"] = appleTeamId
+        }
+
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return false }
+        req.httpBody = body
+
+        guard let (_, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse else {
+            return false
+        }
+        return (200..<300).contains(http.statusCode)
+    }
+
+    public func unregisterPushDevice(
+        deviceId: String,
+        apnsToken: String,
+        token: String
+    ) async -> Bool {
+        guard !token.isEmpty else { return false }
+        let url = baseURL.appendingPathComponent("api/mobile/v1/devices/unregister")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let payload: [String: String] = [
+            "deviceId": deviceId,
+            "apnsToken": apnsToken
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return false }
+        req.httpBody = body
+
+        guard let (_, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse else {
+            return false
+        }
+        return (200..<300).contains(http.statusCode)
+    }
+
+    public func fetchDailyNudge(token: String) async -> AcademyDailyNudgeResponse? {
+        guard !token.isEmpty else { return nil }
+        let url = baseURL.appendingPathComponent("api/mobile/v1/notifications/daily-nudge")
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(AcademyDailyNudgeResponse.self, from: data) else {
+            return nil
+        }
+        return decoded
     }
 }
 

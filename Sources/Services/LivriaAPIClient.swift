@@ -1,4 +1,5 @@
 import Foundation
+import Security
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -12,6 +13,7 @@ public final class LivriaAPIClient {
     public let baseAPI = "https://livria.store/api/mobile/v1"
     public let socialBaseAPI = "https://livriasocial.viplenetwork.com/api/mobile/v1"
     private let session: URLSession
+    private let backgroundPollSession: URLSession
     private let decoder: JSONDecoder
 
     public static let serverLunchBreakMessage = "Notre serveur est a sa pause dejeuner, Merci de revenir une fois le serveur rétabli."
@@ -21,7 +23,35 @@ public final class LivriaAPIClient {
         cfg.timeoutIntervalForRequest = 20
         cfg.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: cfg)
+
+        let bgCfg = URLSessionConfiguration.default
+        bgCfg.timeoutIntervalForRequest = 7.0
+        bgCfg.timeoutIntervalForResource = 10.0
+        bgCfg.waitsForConnectivity = false
+        self.backgroundPollSession = URLSession(configuration: bgCfg)
+
         self.decoder = JSONDecoder()
+    }
+
+    public var resolvedDeviceIdentifier: String {
+        let sharedSuite = UserDefaults(suiteName: "group.com.viplenetwork.shared")
+        #if canImport(UIKit)
+        if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
+            sharedSuite?.set(vendorId, forKey: "viple.shared.deviceId")
+            return vendorId
+        }
+        #endif
+        if let sharedId = sharedSuite?.string(forKey: "viple.shared.deviceId"), !sharedId.isEmpty {
+            return sharedId
+        }
+        if let localId = UserDefaults.standard.string(forKey: "viple.local.deviceId"), !localId.isEmpty {
+            sharedSuite?.set(localId, forKey: "viple.shared.deviceId")
+            return localId
+        }
+        let generated = UUID().uuidString
+        UserDefaults.standard.set(generated, forKey: "viple.local.deviceId")
+        sharedSuite?.set(generated, forKey: "viple.shared.deviceId")
+        return generated
     }
 
     private func applyVipleDeviceHeaders(to req: inout URLRequest) {
@@ -31,10 +61,12 @@ public final class LivriaAPIClient {
         if req.httpMethod == "POST" {
             req.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "X-Idempotency-Key")
         }
-        #if canImport(UIKit)
-        if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
-            req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        let devId = resolvedDeviceIdentifier
+        if !devId.isEmpty {
+            req.setValue(devId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+            req.setValue(devId, forHTTPHeaderField: "X-Viple-Device-Id")
         }
+        #if canImport(UIKit)
         let dev = UIDevice.current
         let bounds = UIScreen.main.bounds
         let deviceSignature = "\(dev.model)|\(dev.systemName)-\(dev.systemVersion)|\(Int(bounds.width))x\(Int(bounds.height))"
@@ -53,6 +85,7 @@ public final class LivriaAPIClient {
                 )
             }
             if http.statusCode >= 500 {
+                reportVipleDiagnosticError(urlOrRoute: req.url?.absoluteString ?? "ios://livria", statusCode: http.statusCode, message: "HTTP \(http.statusCode) Livria Store iOS")
                 throw NSError(
                     domain: "LivriaServerOutage",
                     code: http.statusCode,
@@ -63,6 +96,7 @@ public final class LivriaAPIClient {
         } catch let nsErr as NSError where nsErr.domain == "LivriaServerOutage" {
             throw nsErr
         } catch {
+            reportVipleDiagnosticError(urlOrRoute: req.url?.absoluteString ?? "ios://livria", statusCode: nil, message: error.localizedDescription)
             throw NSError(
                 domain: "LivriaServerOutage",
                 code: 503,
@@ -150,7 +184,13 @@ public final class LivriaAPIClient {
     // MARK: - Viple Live ID Cross-App SSO (Livria Store <-> Livria Social)
 
     public func discoverCrossAppAccount() async -> LivriaCrossAppAccount? {
-        let items = [URLQueryItem(name: "currentApp", value: "Livria Store")]
+        let devId = resolvedDeviceIdentifier
+        guard devId.count >= 8 else { return nil }
+        let items = [
+            URLQueryItem(name: "currentApp", value: "Livria Store"),
+            URLQueryItem(name: "vendorId", value: devId),
+            URLQueryItem(name: "deviceId", value: devId)
+        ]
         if let res: LivriaCrossAppDiscoverResponse = try? await getJSON("/sso/discover", queryItems: items),
            res.hasDetectedAccount, let account = res.account {
             return account
@@ -163,20 +203,28 @@ public final class LivriaAPIClient {
     }
 
     public func announceCrossAppSession(userId: Int, email: String) async {
+        let devId = resolvedDeviceIdentifier
+        guard devId.count >= 8 else { return }
         let payload: [String: Any] = [
             "sourceApp": "Livria Store",
             "appName": "Livria Store",
             "userId": userId,
-            "email": email
+            "email": email,
+            "vendorId": devId,
+            "deviceId": devId
         ]
         _ = try? await postRaw("/sso/announce", body: payload)
         _ = try? await postRaw("\(socialBaseAPI)/sso/announce", body: payload)
     }
 
     public func clearCrossAppSession() async {
+        let devId = resolvedDeviceIdentifier
+        guard devId.count >= 8 else { return }
         let payload: [String: Any] = [
             "sourceApp": "Livria Store",
-            "appName": "Livria Store"
+            "appName": "Livria Store",
+            "vendorId": devId,
+            "deviceId": devId
         ]
         _ = try? await postRaw("/sso/clear", body: payload)
         _ = try? await postRaw("\(socialBaseAPI)/sso/clear", body: payload)
@@ -188,9 +236,12 @@ public final class LivriaAPIClient {
         guestUserId: Int? = nil,
         guestEmail: String? = nil
     ) async throws -> LivriaAuthResponse {
+        let devId = resolvedDeviceIdentifier
         var payload: [String: Any] = [
             "userId": userId,
-            "email": email
+            "email": email,
+            "vendorId": devId,
+            "deviceId": devId
         ]
         if let guestUserId, guestUserId > 0 { payload["guestUserId"] = guestUserId }
         if let guestEmail, !guestEmail.isEmpty { payload["guestEmail"] = guestEmail }
@@ -546,5 +597,267 @@ public final class LivriaAPIClient {
             items.append(URLQueryItem(name: "cid", value: cid))
         }
         return try await getJSON("/library/book/\(bookId)/content", queryItems: items)
+    }
+
+    // MARK: - Les Nouvelles Sorties du Jour & Notifications Push APNs
+
+    public nonisolated static func detectAppleTeamIdFromKeychain() -> String {
+        let account = "viple.livriastore.apns.teamid.probe"
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.viplenetwork.livria.apns.probe",
+            kSecAttrAccount as String: account,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        var status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            var addQuery = query
+            addQuery.removeValue(forKey: kSecMatchLimit as String)
+            addQuery[kSecValueData as String] = Data("1".utf8)
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(addQuery as CFDictionary, &result)
+        }
+        if status == errSecSuccess,
+           let attrs = result as? [String: Any],
+           let group = attrs[kSecAttrAccessGroup as String] as? String {
+            let prefix = group.split(separator: ".").first.map(String.init) ?? ""
+            if prefix.count == 10 && prefix.allSatisfy({ $0.isLetter || $0.isNumber }) {
+                return prefix
+            }
+        }
+        return ""
+    }
+
+    public func fetchDailyNewReleases(
+        days: Int = 7,
+        userId: Int?,
+        email: String?,
+        cid: String?
+    ) async throws -> LivriaDailyReleasesResponse {
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "days", value: String(days))
+        ]
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        if let cid, !cid.isEmpty {
+            items.append(URLQueryItem(name: "cid", value: cid))
+        }
+        return try await getJSON("/new-releases", queryItems: items)
+    }
+
+    public func registerPushDevice(
+        userId: Int?,
+        email: String?,
+        cid: String?,
+        apnsToken: String?,
+        notificationsEnabled: Bool = true,
+        newReleasesEnabled: Bool = true,
+        dailyRecommendationsEnabled: Bool = true
+    ) async {
+        let devId = resolvedDeviceIdentifier
+        guard !devId.isEmpty else { return }
+        #if DEBUG
+        let apnsEnv = "sandbox"
+        #else
+        let apnsEnv = "production"
+        #endif
+        var payload: [String: Any] = [
+            "deviceId": devId,
+            "vendorId": devId,
+            "apnsToken": apnsToken ?? "",
+            "apnsEnvironment": apnsEnv,
+            "appleTeamId": Self.detectAppleTeamIdFromKeychain(),
+            "platform": "iOS",
+            "appVersion": "2611.22",
+            "notificationsEnabled": notificationsEnabled,
+            "newReleasesEnabled": newReleasesEnabled,
+            "dailyRecommendationsEnabled": dailyRecommendationsEnabled
+        ]
+        if let userId, userId > 0 { payload["userId"] = userId }
+        if let email, !email.isEmpty { payload["email"] = email }
+        if let cid, !cid.isEmpty { payload["cid"] = cid }
+        _ = try? await postRaw("/devices/register", body: payload)
+    }
+
+    public func unregisterPushDevice(userId: Int?, email: String?) async {
+        let devId = resolvedDeviceIdentifier
+        guard !devId.isEmpty else { return }
+        var payload: [String: Any] = [
+            "deviceId": devId,
+            "vendorId": devId
+        ]
+        if let userId, userId > 0 { payload["userId"] = userId }
+        if let email, !email.isEmpty { payload["email"] = email }
+        _ = try? await postRaw("/devices/unregister", body: payload)
+    }
+
+    public func pollNotifications(
+        userId: Int?,
+        email: String?,
+        cid: String?,
+        limit: Int = 25,
+        fastBackground: Bool = false
+    ) async throws -> LivriaNotificationPollResponse {
+        let devId = resolvedDeviceIdentifier
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "deviceId", value: devId),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        if let cid, !cid.isEmpty {
+            items.append(URLQueryItem(name: "cid", value: cid))
+        }
+
+        if fastBackground {
+            var comps = URLComponents(string: "\(baseAPI)/notifications/poll")!
+            comps.queryItems = items
+            guard let url = comps.url else {
+                throw URLError(.badURL)
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            req.timeoutInterval = 7.0
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            req.setValue("LivriaStore-iOS/2611.22 (AppID/\(LivriaAppConfig.appleAppId); BackgroundFetch)", forHTTPHeaderField: "User-Agent")
+            applyVipleDeviceHeaders(to: &req)
+            let (data, response) = try await backgroundPollSession.data(for: req)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
+            return try decoder.decode(LivriaNotificationPollResponse.self, from: data)
+        }
+
+        return try await getJSON("/notifications/poll", queryItems: items)
+    }
+
+    public func ackNotifications(
+        notificationIds: [String],
+        userId: Int?,
+        email: String?
+    ) async {
+        let cleanIds = notificationIds.filter { !$0.isEmpty }
+        guard !cleanIds.isEmpty else { return }
+        let devId = resolvedDeviceIdentifier
+        var payload: [String: Any] = [
+            "deviceId": devId,
+            "vendorId": devId,
+            "notificationIds": cleanIds
+        ]
+        if let userId, userId > 0 { payload["userId"] = userId }
+        if let email, !email.isEmpty { payload["email"] = email }
+        _ = try? await postRaw("/notifications/ack", body: payload)
+    }
+
+    // MARK: - Viple Live ID CRM Affinity Telemetry & Ecosystem Error Diagnostics
+
+    nonisolated public func sendVipleTelemetry(
+        userEmail: String?,
+        userCid: String?,
+        livriaUserId: Int? = nil,
+        eventType: String,
+        category: String? = nil,
+        subCategory: String? = nil,
+        actionLabel: String? = nil,
+        detail: String? = nil,
+        imageUrl: String? = nil,
+        priceEur: Double? = nil,
+        isbn: String? = nil,
+        genre: String? = nil,
+        author: String? = nil,
+        itemId: String? = nil,
+        itemTitle: String? = nil,
+        screen: String? = nil
+    ) {
+        let rawEmail = (userEmail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let em = rawEmail.lowercased().hasSuffix("@guest.livria.store") ? "" : rawEmail
+        let cid = (userCid ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if em.isEmpty && cid.isEmpty { return }
+        guard let url = URL(string: "https://api.viple.digital/api/public/telemetry/event") else { return }
+
+        var meta: [String: Any] = [:]
+        if let category, !category.isEmpty { meta["category"] = category }
+        if let subCategory, !subCategory.isEmpty { meta["subCategory"] = subCategory }
+        if let actionLabel, !actionLabel.isEmpty { meta["actionLabel"] = actionLabel }
+        if let detail, !detail.isEmpty { meta["detail"] = detail }
+        if let imageUrl, !imageUrl.isEmpty {
+            let resolvedImg = LivriaURLResolver.resolve(imageUrl)?.absoluteString ?? imageUrl
+            meta["imageUrl"] = resolvedImg
+            meta["coverUrl"] = resolvedImg
+        }
+        if let priceEur { meta["priceEur"] = priceEur }
+        if let isbn, !isbn.isEmpty { meta["isbn"] = isbn }
+
+        var payload: [String: Any] = [
+            "platform": "livria-ios",
+            "eventType": eventType,
+            "pathOrScreen": screen ?? "ios://livria/\(eventType)"
+        ]
+        if !em.isEmpty { payload["userEmail"] = em }
+        if !cid.isEmpty { payload["userCid"] = cid }
+        if let livriaUserId, livriaUserId > 0 { payload["livriaUserId"] = livriaUserId }
+        if let genre, !genre.isEmpty { payload["genre"] = genre }
+        if let author, !author.isEmpty { payload["author"] = author }
+        if let itemId, !itemId.isEmpty { payload["itemId"] = itemId }
+        if let itemTitle, !itemTitle.isEmpty { payload["itemTitle"] = itemTitle }
+        if let category, !category.isEmpty { payload["category"] = category }
+        if let subCategory, !subCategory.isEmpty { payload["subCategory"] = subCategory }
+        if let actionLabel, !actionLabel.isEmpty { payload["actionLabel"] = actionLabel }
+        if let detail, !detail.isEmpty { payload["detail"] = detail }
+        if let imageUrl, !imageUrl.isEmpty {
+            payload["imageUrl"] = LivriaURLResolver.resolve(imageUrl)?.absoluteString ?? imageUrl
+        }
+        if let priceEur { payload["priceEur"] = priceEur }
+        if let isbn, !isbn.isEmpty { payload["isbn"] = isbn }
+        if !meta.isEmpty,
+           let metaData = try? JSONSerialization.data(withJSONObject: meta),
+           let metaStr = String(data: metaData, encoding: .utf8) {
+            payload["metadataJson"] = metaStr
+        }
+
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        Task.detached(priority: .utility) {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 10
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Livria Store iOS", forHTTPHeaderField: "X-Viple-App-Name")
+            req.httpBody = body
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+
+    nonisolated public func reportVipleDiagnosticError(urlOrRoute: String, statusCode: Int?, message: String, userEmail: String? = nil) {
+        if urlOrRoute.contains("api.viple.digital/api/public/") { return }
+        guard let url = URL(string: "https://api.viple.digital/api/public/diagnostics/error") else { return }
+        var payload: [String: Any] = [
+            "service": "livria-store",
+            "platform": "ios",
+            "severity": (statusCode ?? 503) >= 500 ? "critical" : "error",
+            "errorType": "mobile_http_error",
+            "message": String(message.prefix(500)),
+            "urlOrRoute": urlOrRoute
+        ]
+        if let statusCode { payload["statusCode"] = statusCode }
+        if let userEmail, !userEmail.isEmpty { payload["userEmail"] = userEmail }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        Task.detached(priority: .utility) {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 10
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+            _ = try? await URLSession.shared.data(for: req)
+        }
     }
 }

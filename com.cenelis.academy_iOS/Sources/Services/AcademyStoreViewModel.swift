@@ -130,7 +130,7 @@ public final class AcademyStoreViewModel: ObservableObject {
     @Published public var pinGateMessage: String? = nil
     @Published public var shouldForceFreshSSOLogin: Bool = false
 
-    // Préférences d'interface
+    // Préférences d'interface & Rappels quotidiens (1×/jour)
     @Published public var themeMode: AcademyThemeMode = .system {
         didSet { UserDefaults.standard.set(themeMode.rawValue, forKey: "ca.themeMode") }
     }
@@ -139,6 +139,20 @@ public final class AcademyStoreViewModel: ObservableObject {
     }
     @Published public var shotDeviceMode: AcademyDeviceCaptureMode = .mobile {
         didSet { UserDefaults.standard.set(shotDeviceMode.rawValue, forKey: "ca.shotDeviceMode") }
+    }
+    @Published public var dailyRemindersEnabled: Bool = true {
+        didSet {
+            AcademyHaptics.selection()
+            AcademyNotificationManager.shared.dailyRemindersEnabled = dailyRemindersEnabled
+            handleNotificationPreferencesUpdated()
+        }
+    }
+    @Published public var reminderTimeSlot: AcademyReminderTimeSlot = .evening {
+        didSet {
+            AcademyHaptics.selection()
+            AcademyNotificationManager.shared.reminderTimeSlot = reminderTimeSlot
+            handleNotificationPreferencesUpdated()
+        }
     }
 
     // Navigation principale & Lecteur Natif
@@ -213,6 +227,8 @@ public final class AcademyStoreViewModel: ObservableObject {
            let shot = AcademyDeviceCaptureMode(rawValue: savedShot) {
             self.shotDeviceMode = shot
         }
+        self.dailyRemindersEnabled = AcademyNotificationManager.shared.dailyRemindersEnabled
+        self.reminderTimeSlot = AcademyNotificationManager.shared.reminderTimeSlot
 
         // Récupérer le jeton mobile Cenelis / Viple Live ID
         let storedToken = UserDefaults.standard.string(forKey: "ca.mobileToken")
@@ -340,6 +356,7 @@ public final class AcademyStoreViewModel: ObservableObject {
 
             _ = await AcademyAPIClient.shared.pushCloudProgress(self.progress, token: mobileToken)
             self.lastSyncStatus = "Synchronisé · v\(livePayload.contentVersion.prefix(8))"
+            refreshDailyNotificationState(requestAuthIfNeeded: true)
         } catch AcademyAPIError.unauthorized {
             logout()
         } catch AcademyAPIError.forbiddenCenelisPermission(let srvProfile) {
@@ -358,6 +375,7 @@ public final class AcademyStoreViewModel: ObservableObject {
             self.lastSyncStatus = catalog.courses.isEmpty
                 ? "Hors-ligne — vérifiez votre connexion Internet"
                 : "Mode hors-ligne actif (cache local intégral)"
+            refreshDailyNotificationState(requestAuthIfNeeded: false)
         }
     }
 
@@ -546,7 +564,10 @@ public final class AcademyStoreViewModel: ObservableObject {
             return
         }
         let host = (url.host ?? "").lowercased()
-        let items = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        var items = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        if !host.isEmpty {
+            items["__host"] = host
+        }
 
         // 0. Inter-App SSO & Bypass silencieux du PIN depuis « Cenelis Workspace / Admin Hub »
         if let bypassToken = items["pin_bypass_token"], !bypassToken.isEmpty {
@@ -616,8 +637,8 @@ public final class AcademyStoreViewModel: ObservableObject {
             }
         }
 
-        // Navigation directe vers un cours / une section lorsque la session est déjà déverrouillée
-        if host == "handoff" || host == "open" || host == "course" {
+        // Navigation directe vers un cours / une section / l'accueil (y compris au tap sur une notification quotidienne)
+        if host == "handoff" || host == "open" || host == "course" || host == "home" {
             if activeSecurityGate == .unlocked {
                 if catalog.courses.isEmpty {
                     await refreshCatalogAndSync(silent: false)
@@ -707,10 +728,14 @@ public final class AcademyStoreViewModel: ObservableObject {
 
     public func logout() {
         AcademyHaptics.medium()
+        let previousToken = mobileToken
         activeCourseId = nil
         clearStoredCredentialsOnly()
         catalog = AcademyBootstrapPayload()
         shouldForceFreshSSOLogin = true
+        Task {
+            await AcademyNotificationManager.shared.unregisterDeviceOnLogout(token: previousToken)
+        }
 
         if let cookies = HTTPCookieStorage.shared.cookies {
             for cookie in cookies {
@@ -791,7 +816,11 @@ public final class AcademyStoreViewModel: ObservableObject {
         activeBubble = nil
         activeDeepDive = nil
 
-        if let courseId = items["course"], !courseId.isEmpty,
+        let resolvedCourseId = [items["course"], items["id"], items["courseId"]]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
+
+        if let courseId = resolvedCourseId,
            let course = catalog.courses.first(where: { $0.id.caseInsensitiveCompare(courseId) == .orderedSame }) {
             var resolvedStep: Int? = nil
 
@@ -811,7 +840,7 @@ public final class AcademyStoreViewModel: ObservableObject {
             }
 
             activeTab = .courses
-            openCourse(course.id, stepIndex: resolvedStep ?? 0)
+            openCourse(course.id, stepIndex: resolvedStep)
             return
         }
 
@@ -834,6 +863,12 @@ public final class AcademyStoreViewModel: ObservableObject {
             activeCourseId = nil
             preselectedResourceTabId = resTab
             activeTab = .resources
+            return
+        }
+
+        if items["__host"] == "home" || items["tab"] == "home" {
+            activeCourseId = nil
+            activeTab = .home
             return
         }
     }
@@ -933,6 +968,7 @@ public final class AcademyStoreViewModel: ObservableObject {
         }
         progress.lastStep[course.id] = nextIdx
         evaluateTrophies(silent: false)
+        refreshDailyNotificationState(requestAuthIfNeeded: false)
         saveAndScheduleCloudSync()
     }
 
@@ -1196,6 +1232,7 @@ public final class AcademyStoreViewModel: ObservableObject {
         } else {
             showXPToast(amount: amount, label: reason, isMajor: isMajor)
         }
+        refreshDailyNotificationState(requestAuthIfNeeded: false)
     }
 
     public func recordMiniGameCompletion(kind: MiniGameKind, score: Int, maxCombo: Int, accuracyPct: Int) {
@@ -1330,6 +1367,35 @@ public final class AcademyStoreViewModel: ObservableObject {
             if ok {
                 self.lastSyncStatus = "Progression sauvegardée dans le Cloud Cenelis"
             }
+        }
+    }
+
+    // MARK: - Synchronisation des Rappels Quotidiens & APNs (.p8)
+
+    public func refreshDailyNotificationState(requestAuthIfNeeded: Bool) {
+        let isAuthorizedLearner = learner.authenticated && learner.hasCenelisAccess
+        AcademyNotificationManager.shared.refreshLocalDailyReminder(
+            catalog: catalog,
+            progress: progress,
+            isAuthenticated: isAuthorizedLearner
+        )
+        AcademyNotificationManager.shared.scheduleNextBackgroundRefresh()
+
+        guard isAuthorizedLearner, !mobileToken.isEmpty else { return }
+        let token = mobileToken
+        if requestAuthIfNeeded && activeSecurityGate == .unlocked {
+            Task { @MainActor in
+                await AcademyNotificationManager.shared.requestPermissionsAndRegisterIfNeeded(mobileToken: token)
+            }
+        }
+    }
+
+    private func handleNotificationPreferencesUpdated() {
+        refreshDailyNotificationState(requestAuthIfNeeded: dailyRemindersEnabled)
+        guard learner.authenticated, learner.hasCenelisAccess, !mobileToken.isEmpty else { return }
+        let token = mobileToken
+        Task { @MainActor in
+            await AcademyNotificationManager.shared.syncDeviceWithBackend(mobileToken: token)
         }
     }
 
