@@ -256,6 +256,9 @@ public final class AcademyStoreViewModel: ObservableObject {
             )
         }
 
+        // Initialiser immédiatement l'identité matérielle partagée (App Group cenelis.shared.physicalDeviceId.v1)
+        _ = AcademyDeviceHardwareInfo.current()
+
         // Le code PIN Cenelis Connect n'est JAMAIS persisté d'un lancement à l'autre : il est exigé à CHAQUE lancement de l'application
         self.isPinVerifiedForCurrentLaunch = false
 
@@ -301,7 +304,7 @@ public final class AcademyStoreViewModel: ObservableObject {
             let me = try await AcademyAPIClient.shared.fetchMe(token: mobileToken)
             self.isOfflineMode = false
             if !me.authenticated {
-                clearStoredCredentialsOnly()
+                logout()
                 return
             }
             let profile = me.learnerProfile
@@ -313,8 +316,8 @@ public final class AcademyStoreViewModel: ObservableObject {
             if let acc = me.cguAcceptance {
                 self.serverCguAcceptance = acc
             }
-        } catch AcademyAPIError.unauthorized {
-            clearStoredCredentialsOnly()
+        } catch let apiError as AcademyAPIError where apiError.isSessionTerminated {
+            logout(remoteRevocationMessage: apiError.errorDescription)
         } catch {
             self.isOfflineMode = true
             self.pinGateMessage = "Connexion réseau requise pour vérifier votre habilitation et votre code PIN Cenelis Connect."
@@ -357,8 +360,8 @@ public final class AcademyStoreViewModel: ObservableObject {
             _ = await AcademyAPIClient.shared.pushCloudProgress(self.progress, token: mobileToken)
             self.lastSyncStatus = "Synchronisé · v\(livePayload.contentVersion.prefix(8))"
             refreshDailyNotificationState(requestAuthIfNeeded: true)
-        } catch AcademyAPIError.unauthorized {
-            logout()
+        } catch let apiError as AcademyAPIError where apiError.isSessionTerminated {
+            logout(remoteRevocationMessage: apiError.errorDescription)
         } catch AcademyAPIError.forbiddenCenelisPermission(let srvProfile) {
             if let srvProfile {
                 self.learner = srvProfile
@@ -523,6 +526,7 @@ public final class AcademyStoreViewModel: ObservableObject {
         isSyncing = true
         defer { isSyncing = false }
 
+        let previousEmail = self.learner.email
         let res = try await AcademyAPIClient.shared.login(email: email, password: password)
         guard let token = res.token, !token.isEmpty else {
             throw AcademyAPIError.invalidResponse
@@ -534,6 +538,10 @@ public final class AcademyStoreViewModel: ObservableObject {
         self.mobileToken = token
 
         if let profile = res.learner {
+            if !previousEmail.isEmpty && previousEmail.caseInsensitiveCompare(profile.email) != .orderedSame {
+                self.progress = AcademyUserProgress()
+                AcademyAPIClient.shared.saveLocalProgress(self.progress)
+            }
             self.learner = profile
             persistLearnerIdentity(profile, token: token)
         }
@@ -547,6 +555,11 @@ public final class AcademyStoreViewModel: ObservableObject {
             self.progress = Self.mergeProgress(local: self.progress, cloud: cloudProg)
             evaluateTrophies(silent: true)
             AcademyAPIClient.shared.saveLocalProgress(self.progress)
+        }
+
+        // Enregistrer immédiatement le nouvel apprenant actif sur cet appareil (purge tout ancien compte)
+        if self.learner.hasCenelisAccess {
+            await AcademyNotificationManager.shared.syncDeviceWithBackend(mobileToken: token, isExplicitLogin: true)
         }
 
         AcademyHaptics.success()
@@ -578,12 +591,20 @@ public final class AcademyStoreViewModel: ObservableObject {
             defer { isProcessingIncomingHandoff = false }
 
             do {
+                let previousEmail = self.learner.email
                 let res = try await AcademyAPIClient.shared.redeemPinBypassToken(bypassToken)
                 if let token = res.token, !token.isEmpty {
                     self.mobileToken = token
                     if let profile = res.learner {
+                        if !previousEmail.isEmpty && previousEmail.caseInsensitiveCompare(profile.email) != .orderedSame {
+                            self.progress = AcademyUserProgress()
+                            AcademyAPIClient.shared.saveLocalProgress(self.progress)
+                        }
                         self.learner = profile
                         persistLearnerIdentity(profile, token: token)
+                    }
+                    if self.learner.hasCenelisAccess {
+                        await AcademyNotificationManager.shared.syncDeviceWithBackend(mobileToken: token, isExplicitLogin: true)
                     }
                 }
                 if let srvCgu = res.cgu {
@@ -670,6 +691,7 @@ public final class AcademyStoreViewModel: ObservableObject {
             return
         }
 
+        let previousEmail = self.learner.email
         let email = items["email"] ?? ""
         let name = items["name"]?.isEmpty == false ? items["name"]! : email
         let cid = items["cid"] ?? ""
@@ -692,12 +714,22 @@ public final class AcademyStoreViewModel: ObservableObject {
             rbacStatus: rbacStatus
         )
 
+        if !previousEmail.isEmpty && !email.isEmpty && previousEmail.caseInsensitiveCompare(email) != .orderedSame {
+            self.progress = AcademyUserProgress()
+            AcademyAPIClient.shared.saveLocalProgress(self.progress)
+        }
+
         self.shouldForceFreshSSOLogin = false
         self.isPinVerifiedForCurrentLaunch = false
         self.hasAutoOpenedPinInCurrentGateEntry = false
         self.mobileToken = token
         self.learner = profile
         persistLearnerIdentity(profile, token: token)
+
+        // Enregistrer immédiatement le nouvel apprenant actif AVANT /me afin d'effacer toute ancienne révocation ou compte précédent
+        if hasAccess {
+            await AcademyNotificationManager.shared.syncDeviceWithBackend(mobileToken: token, isExplicitLogin: true)
+        }
 
         await refreshSessionAndCGU()
 
@@ -707,6 +739,7 @@ public final class AcademyStoreViewModel: ObservableObject {
     }
 
     private func clearStoredCredentialsOnly() {
+        cloudPushTask?.cancel()
         pinPollingTask?.cancel()
         activePinSafariItem = nil
         isPinVerifiedForCurrentLaunch = false
@@ -726,15 +759,27 @@ public final class AcademyStoreViewModel: ObservableObject {
         sharedSuite?.removeObject(forKey: "viple.shared.email")
     }
 
-    public func logout() {
+    public func logout(remoteRevocationMessage: String? = nil) {
         AcademyHaptics.medium()
-        let previousToken = mobileToken
+        // Capturer oldToken et oldEmail AVANT de vider mobileToken et l'identité locale
+        let oldToken = mobileToken
+        let oldEmail = learner.email
+        let oldCid = learner.cid
+
+        // Annuler immédiatement tous les rappels locaux hors-ligne (18h30), notifications délivrées, badge et BGAppRefreshTask
+        AcademyNotificationManager.shared.cancelAllLocalNotificationsImmediately()
+
         activeCourseId = nil
         clearStoredCredentialsOnly()
         catalog = AcademyBootstrapPayload()
         shouldForceFreshSSOLogin = true
+
         Task {
-            await AcademyNotificationManager.shared.unregisterDeviceOnLogout(token: previousToken)
+            await AcademyNotificationManager.shared.unregisterDeviceOnLogout(
+                token: oldToken,
+                email: oldEmail,
+                cid: oldCid
+            )
         }
 
         if let cookies = HTTPCookieStorage.shared.cookies {
@@ -745,7 +790,7 @@ public final class AcademyStoreViewModel: ObservableObject {
                 }
             }
         }
-        lastSyncStatus = "Session déconnectée"
+        lastSyncStatus = remoteRevocationMessage ?? "Session déconnectée"
     }
 
     private func persistLearnerIdentity(_ profile: AcademyLearnerProfile, token: String) {
@@ -1395,7 +1440,7 @@ public final class AcademyStoreViewModel: ObservableObject {
         guard learner.authenticated, learner.hasCenelisAccess, !mobileToken.isEmpty else { return }
         let token = mobileToken
         Task { @MainActor in
-            await AcademyNotificationManager.shared.syncDeviceWithBackend(mobileToken: token)
+            await AcademyNotificationManager.shared.syncDeviceWithBackend(mobileToken: token, isExplicitLogin: false)
         }
     }
 

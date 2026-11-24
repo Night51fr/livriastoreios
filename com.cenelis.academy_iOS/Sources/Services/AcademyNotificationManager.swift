@@ -170,7 +170,7 @@ public final class AcademyNotificationManager: NSObject, ObservableObject, UNUse
             authorizationGranted = false
         }
 
-        await syncDeviceWithBackend(mobileToken: mobileToken)
+        await syncDeviceWithBackend(mobileToken: mobileToken, isExplicitLogin: false)
     }
 
     public func handleDidRegisterForRemoteNotifications(tokenHex: String) async {
@@ -182,8 +182,11 @@ public final class AcademyNotificationManager: NSObject, ObservableObject, UNUse
         let token = boundStore?.mobileToken
             ?? UserDefaults.standard.string(forKey: "ca.mobileToken")
             ?? ""
-        if !token.isEmpty {
-            await syncDeviceWithBackend(mobileToken: token)
+        let email = boundStore?.learner.email
+            ?? UserDefaults.standard.string(forKey: "ca.learnerEmail")
+            ?? ""
+        if !token.isEmpty && !email.isEmpty {
+            await syncDeviceWithBackend(mobileToken: token, isExplicitLogin: false)
         }
     }
 
@@ -192,48 +195,65 @@ public final class AcademyNotificationManager: NSObject, ObservableObject, UNUse
         _ = message
     }
 
-    public func syncDeviceWithBackend(mobileToken: String) async {
+    public func syncDeviceWithBackend(mobileToken: String, isExplicitLogin: Bool = true) async {
         guard !mobileToken.isEmpty else { return }
+        let hw = AcademyDeviceHardwareInfo.current()
         let slot = reminderTimeSlot
         let enabled = dailyRemindersEnabled
-        let devId = persistentDeviceId()
         let teamId = Self.detectAppleTeamIdFromKeychain()
         let env = Self.detectApnsEnvironment()
 
-        _ = await AcademyAPIClient.shared.registerPushDevice(
-            deviceId: devId,
+        let res = await AcademyAPIClient.shared.registerPushDevice(
+            deviceId: hw.deviceId,
+            physicalDeviceId: hw.physicalDeviceId,
             apnsToken: apnsTokenHex,
             apnsEnvironment: env,
             appleTeamId: teamId,
             notificationsEnabled: enabled,
             preferredHourParis: slot.hour,
             preferredMinuteParis: slot.minute,
+            isExplicitLogin: isExplicitLogin,
             token: mobileToken
         )
+
+        if res.sessionRevoked {
+            boundStore?.logout(remoteRevocationMessage: "Cet appareil a été déconnecté à distance.")
+        }
     }
 
-    public func unregisterDeviceOnLogout(token: String) async {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.dailyLocalReminderId])
+    public func cancelAllLocalNotificationsImmediately() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.dailyLocalReminderId])
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
         clearBadgeCount()
-        guard !token.isEmpty else { return }
+        #if canImport(BackgroundTasks)
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.bgRefreshTaskId)
+        #endif
+        UserDefaults.standard.removeObject(forKey: "ca.mobileToken")
+        UserDefaults(suiteName: AcademyDeviceHardwareInfo.sharedSuiteName)?.removeObject(forKey: "ca.mobileToken")
+    }
+
+    public func unregisterDeviceOnLogout(token: String, email: String = "", cid: String = "") async {
+        cancelAllLocalNotificationsImmediately()
+        let hw = AcademyDeviceHardwareInfo.current()
         _ = await AcademyAPIClient.shared.unregisterPushDevice(
-            deviceId: persistentDeviceId(),
+            deviceId: hw.deviceId,
+            physicalDeviceId: hw.physicalDeviceId,
             apnsToken: apnsTokenHex,
-            token: token
+            token: token,
+            email: email,
+            cid: cid
         )
     }
 
-    private func persistentDeviceId() -> String {
-        if let existing = UserDefaults.standard.string(forKey: Keys.deviceId), !existing.isEmpty {
-            return existing
-        }
-        #if canImport(UIKit)
-        let generated = "ios-" + (UIDevice.current.identifierForVendor?.uuidString.lowercased() ?? UUID().uuidString.lowercased())
-        #else
-        let generated = "ios-" + UUID().uuidString.lowercased()
-        #endif
-        UserDefaults.standard.set(generated, forKey: Keys.deviceId)
-        return generated
+    public func persistentDeviceId() -> String {
+        AcademyDeviceHardwareInfo.resolveOrCreateLocalDeviceId()
+    }
+
+    public func sharedPhysicalDeviceId() -> String {
+        let devId = AcademyDeviceHardwareInfo.resolveOrCreateLocalDeviceId()
+        return AcademyDeviceHardwareInfo.resolveOrPersistSharedPhysicalDeviceId(fallbackDeviceId: devId)
     }
 
     // MARK: - Détection Automatique de l'Apple Team ID depuis le Trousseau (Keychain Access Group Prefix)
@@ -457,7 +477,13 @@ public final class AcademyNotificationManager: NSObject, ObservableObject, UNUse
 
     public func scheduleNextBackgroundRefresh() {
         #if canImport(BackgroundTasks)
-        guard dailyRemindersEnabled else {
+        let activeToken = boundStore?.mobileToken
+            ?? UserDefaults.standard.string(forKey: "ca.mobileToken")
+            ?? ""
+        let activeEmail = boundStore?.learner.email
+            ?? UserDefaults.standard.string(forKey: "ca.learnerEmail")
+            ?? ""
+        guard dailyRemindersEnabled, !activeToken.isEmpty, !activeEmail.isEmpty else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.bgRefreshTaskId)
             return
         }
@@ -469,18 +495,47 @@ public final class AcademyNotificationManager: NSObject, ObservableObject, UNUse
     }
 
     public func performBackgroundDailyNudgeCheck() async -> Bool {
-        guard dailyRemindersEnabled else { return true }
         let token = boundStore?.mobileToken
             ?? UserDefaults.standard.string(forKey: "ca.mobileToken")
             ?? ""
-        guard !token.isEmpty else { return true }
+        let email = boundStore?.learner.email
+            ?? UserDefaults.standard.string(forKey: "ca.learnerEmail")
+            ?? ""
 
-        guard let nudge = await AcademyAPIClient.shared.fetchDailyNudge(token: token),
-              nudge.ok else {
+        guard !token.isEmpty, !email.isEmpty else {
+            cancelAllLocalNotificationsImmediately()
+            return true
+        }
+
+        guard dailyRemindersEnabled else { return true }
+
+        let nudgeOpt: AcademyDailyNudgeResponse?
+        do {
+            nudgeOpt = try await AcademyAPIClient.shared.fetchDailyNudge(token: token)
+        } catch let apiError as AcademyAPIError where apiError.isSessionTerminated {
+            if let store = boundStore {
+                store.logout(remoteRevocationMessage: apiError.errorDescription)
+            } else {
+                cancelAllLocalNotificationsImmediately()
+                UserDefaults.standard.removeObject(forKey: "ca.learnerEmail")
+                UserDefaults.standard.removeObject(forKey: "ca.learnerName")
+                UserDefaults.standard.removeObject(forKey: "ca.learnerCid")
+                UserDefaults.standard.removeObject(forKey: "ca.learnerGroups")
+                UserDefaults.standard.removeObject(forKey: "ca.learnerHasAccess")
+                UserDefaults.standard.removeObject(forKey: "ca.learnerScope")
+                UserDefaults.standard.removeObject(forKey: "ca.learnerRbacStatus")
+            }
+            return true
+        } catch {
             return false
         }
 
-        if nudge.notificationsEnabled == false {
+        guard let nudge = nudgeOpt, nudge.ok else {
+            return true
+        }
+
+        if nudge.isSignedIn == false || nudge.notificationsEnabled == false {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.dailyLocalReminderId])
             return true
         }
 
@@ -538,6 +593,15 @@ public final class AcademyNotificationManager: NSObject, ObservableObject, UNUse
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let activeToken = UserDefaults.standard.string(forKey: "ca.mobileToken") ?? ""
+        let activeEmail = UserDefaults.standard.string(forKey: "ca.learnerEmail") ?? ""
+        guard !activeToken.isEmpty, !activeEmail.isEmpty else {
+            center.removeAllPendingNotificationRequests()
+            center.removeAllDeliveredNotifications()
+            completionHandler([])
+            return
+        }
+
         let info = notification.request.content.userInfo
         let nudgeId = (info["notificationId"] as? String) ?? notification.request.identifier
         let isLocalDaily = (notification.request.identifier == Self.dailyLocalReminderId)

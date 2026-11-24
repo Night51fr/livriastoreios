@@ -180,6 +180,7 @@ public struct LivriaPaymentSettings: Codable, Equatable, Sendable {
 
 public struct LivriaBootstrapResponse: Codable, Sendable {
     public var ok: Bool
+    public var sessionRevoked: Bool?
     public var user: LivriaUserProfile
     public var home: LivriaHomeSection
     public var books: [LivriaBook]
@@ -1484,6 +1485,7 @@ public struct LivriaMobileNotificationItem: Codable, Identifiable, Equatable, Ha
 
 public struct LivriaNotificationPollResponse: Codable, Equatable, Sendable {
     public var ok: Bool
+    public var sessionRevoked: Bool
     public var notificationsEnabled: Bool
     public var newReleasesEnabled: Bool
     public var dailyRecommendationsEnabled: Bool
@@ -1492,18 +1494,254 @@ public struct LivriaNotificationPollResponse: Codable, Equatable, Sendable {
     public var recent: [LivriaMobileNotificationItem]
 
     enum CodingKeys: String, CodingKey {
-        case ok, notificationsEnabled, newReleasesEnabled, dailyRecommendationsEnabled, todayReleasesCount, unseen, recent
+        case ok, sessionRevoked, notificationsEnabled, newReleasesEnabled, dailyRecommendationsEnabled, todayReleasesCount, unseen, recent
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        sessionRevoked = (try? c.decode(Bool.self, forKey: .sessionRevoked)) ?? false
         notificationsEnabled = (try? c.decode(Bool.self, forKey: .notificationsEnabled)) ?? true
         newReleasesEnabled = (try? c.decode(Bool.self, forKey: .newReleasesEnabled)) ?? true
         dailyRecommendationsEnabled = (try? c.decode(Bool.self, forKey: .dailyRecommendationsEnabled)) ?? true
         todayReleasesCount = (try? c.decode(Int.self, forKey: .todayReleasesCount)) ?? 0
         unseen = (try? c.decode([LivriaMobileNotificationItem].self, forKey: .unseen)) ?? []
         recent = (try? c.decode([LivriaMobileNotificationItem].self, forKey: .recent)) ?? []
+    }
+}
+
+// MARK: - Hub Central des Appareils Connectés Viple Live ID (/devices/sessions & /devices/revoke)
+
+public struct LivriaConnectedAppBadge: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var appId: String
+    public var appName: String
+    public var bundleId: String
+    public var icon: String
+    public var colorHex: String
+    public var accountEmail: String
+    public var appVersion: String
+    public var notificationsEnabled: Bool
+    public var lastSeenAtUtc: String
+
+    public var id: String { "\(appId.lowercased())-\(accountEmail.lowercased())" }
+
+    public init(
+        appId: String,
+        appName: String,
+        bundleId: String = "",
+        icon: String = "app.fill",
+        colorHex: String = "#7C3AED",
+        accountEmail: String = "",
+        appVersion: String = "",
+        notificationsEnabled: Bool = true,
+        lastSeenAtUtc: String = ""
+    ) {
+        self.appId = appId
+        self.appName = appName
+        self.bundleId = bundleId
+        self.icon = icon
+        self.colorHex = colorHex
+        self.accountEmail = accountEmail
+        self.appVersion = appVersion
+        self.notificationsEnabled = notificationsEnabled
+        self.lastSeenAtUtc = lastSeenAtUtc
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case appId, appName, bundleId, icon, colorHex, accountEmail, appVersion, notificationsEnabled, lastSeenAtUtc
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedAppId = (try? c.decode(String.self, forKey: .appId)) ?? "livria-store"
+        appId = decodedAppId
+        appName = (try? c.decode(String.self, forKey: .appName)) ?? Self.defaultDisplayName(for: decodedAppId)
+        bundleId = (try? c.decode(String.self, forKey: .bundleId)) ?? ""
+        icon = (try? c.decode(String.self, forKey: .icon)) ?? Self.defaultSystemIcon(for: decodedAppId)
+        colorHex = (try? c.decode(String.self, forKey: .colorHex)) ?? Self.defaultColorHex(for: decodedAppId)
+        accountEmail = (try? c.decode(String.self, forKey: .accountEmail)) ?? ""
+        appVersion = (try? c.decode(String.self, forKey: .appVersion)) ?? ""
+        notificationsEnabled = (try? c.decode(Bool.self, forKey: .notificationsEnabled)) ?? false
+        lastSeenAtUtc = (try? c.decode(String.self, forKey: .lastSeenAtUtc)) ?? ""
+    }
+
+    public static func defaultDisplayName(for appId: String) -> String {
+        switch appId.lowercased() {
+        case "viple-mail": return "Viple Mail"
+        case "livria-store": return "Livria Store"
+        case "livria-social": return "Livria Social"
+        case "cenelis-academy": return "Cenelis Academy"
+        default: return appId
+        }
+    }
+
+    public static func defaultSystemIcon(for appId: String) -> String {
+        switch appId.lowercased() {
+        case "viple-mail": return "envelope.fill"
+        case "livria-store": return "bag.fill"
+        case "livria-social": return "bubble.left.and.bubble.right.fill"
+        case "cenelis-academy": return "graduationcap.fill"
+        default: return "app.fill"
+        }
+    }
+
+    public static func defaultColorHex(for appId: String) -> String {
+        switch appId.lowercased() {
+        case "viple-mail": return "#2563EB"
+        case "livria-store": return "#7C3AED"
+        case "livria-social": return "#EC4899"
+        case "cenelis-academy": return "#059669"
+        default: return "#64748B"
+        }
+    }
+}
+
+public struct LivriaConnectedDevice: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var deviceId: String
+    public var rawDeviceIds: [String]
+    public var modelName: String
+    public var modelCode: String
+    public var platform: String
+    public var osVersion: String
+    public var isCurrentDevice: Bool
+    public var pushActive: Bool
+    public var connectedAtUtc: String
+    public var lastSeenAtUtc: String
+    public var connectedApps: [LivriaConnectedAppBadge]
+
+    public var id: String { deviceId }
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId, rawDeviceIds, modelName, modelCode, platform, osVersion
+        case isCurrentDevice, pushActive, connectedAtUtc, lastSeenAtUtc, connectedApps
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedId = (try? c.decode(String.self, forKey: .deviceId)) ?? UUID().uuidString
+        deviceId = decodedId
+        rawDeviceIds = (try? c.decode([String].self, forKey: .rawDeviceIds)) ?? [decodedId]
+        modelName = (try? c.decode(String.self, forKey: .modelName)) ?? "Apple iPhone"
+        modelCode = (try? c.decode(String.self, forKey: .modelCode)) ?? ""
+        platform = (try? c.decode(String.self, forKey: .platform)) ?? "iOS"
+        osVersion = (try? c.decode(String.self, forKey: .osVersion)) ?? ""
+        isCurrentDevice = (try? c.decode(Bool.self, forKey: .isCurrentDevice)) ?? false
+        pushActive = (try? c.decode(Bool.self, forKey: .pushActive)) ?? false
+        connectedAtUtc = (try? c.decode(String.self, forKey: .connectedAtUtc)) ?? ""
+        lastSeenAtUtc = (try? c.decode(String.self, forKey: .lastSeenAtUtc)) ?? ""
+        connectedApps = (try? c.decode([LivriaConnectedAppBadge].self, forKey: .connectedApps)) ?? []
+    }
+
+    public var displayModelName: String {
+        let clean = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? "Apple iPhone" : clean
+    }
+
+    public var displayOsLabel: String {
+        let cleanOs = osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanOs.isEmpty {
+            return cleanOs
+        }
+        return platform.isEmpty ? "iOS" : platform
+    }
+
+    public var systemSymbolName: String {
+        let lowerModel = (modelName + " " + modelCode + " " + platform).lowercased()
+        if lowerModel.contains("ipad") { return "ipad.gen2" }
+        if lowerModel.contains("mac") { return "laptopcomputer" }
+        if lowerModel.contains("windows") || lowerModel.contains("web") { return "desktopcomputer" }
+        return "iphone.gen3"
+    }
+
+    private static func parseIsoDate(_ raw: String) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: trimmed) { return d }
+
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        if let d = isoPlain.date(from: trimmed) { return d }
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        for fmt in ["yyyy-MM-dd'T'HH:mm:ss.SSSSSSS'Z'", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss"] {
+            df.dateFormat = fmt
+            if let d = df.date(from: trimmed) { return d }
+        }
+        return nil
+    }
+
+    public var lastActivityLabelFr: String {
+        guard let date = Self.parseIsoDate(lastSeenAtUtc) else {
+            return isCurrentDevice ? "Actif maintenant" : "Activité récente"
+        }
+        let elapsed = Date().timeIntervalSince(date)
+        if elapsed < 90 {
+            return "Actif à l'instant"
+        }
+        let mins = Int(elapsed / 60)
+        if mins < 60 {
+            return "Actif il y a \(max(1, mins)) min"
+        }
+
+        let parisTz = TimeZone(identifier: "Europe/Paris") ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = parisTz
+        let tf = DateFormatter()
+        tf.locale = Locale(identifier: "fr_FR")
+        tf.timeZone = parisTz
+
+        if cal.isDateInToday(date) {
+            tf.dateFormat = "HH'h'mm"
+            return "Aujourd'hui à \(tf.string(from: date))"
+        } else if cal.isDateInYesterday(date) {
+            tf.dateFormat = "HH'h'mm"
+            return "Hier à \(tf.string(from: date))"
+        } else {
+            tf.dateFormat = "d MMM yyyy 'à' HH'h'mm"
+            return "Le \(tf.string(from: date))"
+        }
+    }
+}
+
+public struct LivriaConnectedDevicesResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var sessionRevoked: Bool
+    public var error: String?
+    public var devices: [LivriaConnectedDevice]
+
+    enum CodingKeys: String, CodingKey {
+        case ok, sessionRevoked, error, devices
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
+        sessionRevoked = (try? c.decode(Bool.self, forKey: .sessionRevoked)) ?? false
+        error = try? c.decodeIfPresent(String.self, forKey: .error)
+        devices = (try? c.decode([LivriaConnectedDevice].self, forKey: .devices)) ?? []
+    }
+}
+
+public struct LivriaRevokeDeviceResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var revokedCount: Int
+    public var currentDeviceRevoked: Bool
+    public var error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, revokedCount, currentDeviceRevoked, error
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
+        revokedCount = (try? c.decode(Int.self, forKey: .revokedCount)) ?? 0
+        currentDeviceRevoked = (try? c.decode(Bool.self, forKey: .currentDeviceRevoked)) ?? false
+        error = try? c.decodeIfPresent(String.self, forKey: .error)
     }
 }
 

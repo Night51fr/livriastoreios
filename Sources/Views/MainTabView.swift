@@ -666,21 +666,45 @@ public struct LivriaStoreAccountHubView: View {
             }
 
             if store.isAuthenticated {
-                NavigationLink {
-                    ProfileView()
-                } label: {
-                    HStack {
-                        Image(systemName: "pencil.line")
-                        Text("Modifier mes informations et mon adresse")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.bold())
+                VStack(spacing: 8) {
+                    NavigationLink {
+                        ProfileView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "pencil.line")
+                            Text("Modifier mes informations et mon adresse")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.18)))
+                        .foregroundStyle(.white)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.18)))
-                    .foregroundStyle(.white)
+
+                    NavigationLink {
+                        LivriaConnectedDevicesView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "laptopcomputer.and.iphone")
+                            Text("Appareils connectés")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                            Spacer()
+                            Text("Viple Live ID")
+                                .font(.system(size: 10.5, weight: .black, design: .rounded))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.white.opacity(0.22)))
+                            Image(systemName: "chevron.right")
+                                .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.18)))
+                        .foregroundStyle(.white)
+                    }
                 }
             } else {
                 Button {
@@ -755,6 +779,13 @@ public struct LivriaStoreAccountHubView: View {
                 .buttonStyle(.plain)
 
                 if store.isAuthenticated {
+                    NavigationLink {
+                        LivriaConnectedDevicesView()
+                    } label: {
+                        shortcutTile(title: "Appareils", subtitle: "Sessions Viple", icon: "laptopcomputer.and.iphone", color: LivriaPalette.mint)
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         store.selectedMainTab = 2
                     } label: {
@@ -999,6 +1030,15 @@ public struct LivriaStoreAccountHubView: View {
                 }
 
                 if store.isAuthenticated {
+                    hubSectionLink(
+                        title: "Appareils connectés",
+                        subtitle: "Consultez vos appareils connectés sur Viple Mail, Livria Store, Livria Social et Cenelis Academy et déconnectez-les à distance",
+                        icon: "laptopcomputer.and.iphone",
+                        color: LivriaPalette.mint
+                    ) {
+                        LivriaConnectedDevicesView()
+                    }
+
                     hubSectionLink(
                         title: "Préférences & Profil Complet",
                         subtitle: "Biographie de lecteur, objectif annuel de lecture et paramètres",

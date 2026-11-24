@@ -102,6 +102,50 @@ public struct PassportProfileView: View {
                 }
                 .buttonStyle(.plain)
 
+                NavigationLink {
+                    AcademyConnectedDevicesView(vm: vm)
+                } label: {
+                    let hw = AcademyDeviceHardwareInfo.current()
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .fill(AcademyPalette.pineSoft)
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "iphone.and.arrow.forward")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundStyle(AcademyPalette.pine)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Appareils connectés & Sessions")
+                                .font(.system(size: 13.5, weight: .heavy, design: .rounded))
+                                .foregroundStyle(AcademyPalette.ink)
+                            Text("\(hw.modelName) · Viple Mail, Livria & Cenelis")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(AcademyPalette.inkSecondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(AcademyPalette.pine)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(AcademyPalette.pineSoft.opacity(0.55))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(AcademyPalette.pineBorder, lineWidth: 1)
+                            )
+                    )
+                }
+                .simultaneousGesture(TapGesture().onEnded {
+                    AcademyHaptics.selection()
+                })
+
                 HStack(spacing: 10) {
                     Button {
                         Task { await vm.refreshCatalogAndSync(silent: false) }

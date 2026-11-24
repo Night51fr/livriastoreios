@@ -46,6 +46,7 @@ public struct ProfileView: View {
                         advancedSettingsEntryCard
                     } else {
                         profileIdentityHeaderCard
+                        connectedDevicesProfileCard
                         themePersonalizationStudioCard
                         editProfileAndAddressCard
                         advancedSettingsEntryCard
@@ -347,6 +348,51 @@ public struct ProfileView: View {
         }
         .padding(20)
         .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(LivriaPalette.heroGradient))
+    }
+
+    // MARK: - Carte « Appareils connectés » (Hub Central Viple Live ID)
+
+    private var connectedDevicesProfileCard: some View {
+        NavigationLink {
+            LivriaConnectedDevicesView()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LivriaPalette.mint.opacity(0.16))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "laptopcomputer.and.iphone")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(LivriaPalette.mint)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("Appareils connectés")
+                            .font(.system(size: 15.5, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaPalette.ink)
+                        Text("Viple Live ID")
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2.5)
+                            .background(Capsule().fill(LivriaPalette.mint.opacity(0.15)))
+                            .foregroundStyle(LivriaPalette.mint)
+                    }
+                    Text("Modèle exact de vos iPhone/iPad, applications actives (Viple Mail, Livria, Cenelis) et déconnexion à distance")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(LivriaPalette.inkMuted)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(LivriaPalette.primary)
+            }
+            .livriaCard(padding: 15)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Studio de Personnalisation de Livria (Thèmes d'arrière-plan 60-80% transparents)

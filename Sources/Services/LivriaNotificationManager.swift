@@ -350,55 +350,142 @@ public final class LivriaNotificationManager: NSObject, ObservableObject, UNUser
 
     // MARK: - 2. Synchronisation de l'Appareil avec le Serveur Livria
 
+    public var cachedAccountSnapshot: (userId: Int?, email: String?, cid: String?) {
+        let uid = defaults.integer(forKey: cachedUserIdKey)
+        let em = defaults.string(forKey: cachedEmailKey)
+        let cid = defaults.string(forKey: cachedCidKey)
+        return (uid > 0 ? uid : nil, em, cid)
+    }
+
     private var resolvedUserId: Int? {
-        if let uid = attachedStore?.currentUser?.id, uid > 0 {
-            return uid
+        if let store = attachedStore {
+            guard store.isAuthenticated, let u = store.currentUser, !u.isGuestAccount, u.id > 0 else {
+                return nil
+            }
+            return u.id
         }
         let saved = defaults.integer(forKey: cachedUserIdKey)
         return saved > 0 ? saved : nil
     }
 
     private var resolvedEmail: String? {
-        if let em = attachedStore?.currentUser?.email, !em.isEmpty {
-            return em
+        if let store = attachedStore {
+            guard store.isAuthenticated, let u = store.currentUser, !u.isGuestAccount, !u.email.isEmpty else {
+                return nil
+            }
+            return u.email
         }
-        return defaults.string(forKey: cachedEmailKey)
+        guard let em = defaults.string(forKey: cachedEmailKey),
+              !em.isEmpty,
+              !em.lowercased().hasSuffix("@guest.livria.store") else {
+            return nil
+        }
+        return em
     }
 
     private var resolvedCid: String? {
-        if let cid = attachedStore?.currentUser?.cid, !cid.isEmpty {
-            return cid
+        if let store = attachedStore {
+            guard store.isAuthenticated, let u = store.currentUser, !u.isGuestAccount else {
+                return nil
+            }
+            return u.cid.isEmpty ? defaults.string(forKey: cachedCidKey) : u.cid
         }
         return defaults.string(forKey: cachedCidKey)
     }
 
-    public func syncDeviceRegistration(user: LivriaUserProfile? = nil) async {
-        if let user {
-            defaults.set(user.id, forKey: cachedUserIdKey)
-            defaults.set(user.email, forKey: cachedEmailKey)
-            defaults.set(user.cid, forKey: cachedCidKey)
-        }
-
-        await LivriaAPIClient.shared.registerPushDevice(
-            userId: user?.id ?? resolvedUserId,
-            email: user?.email ?? resolvedEmail,
-            cid: user?.cid ?? resolvedCid,
-            apnsToken: apnsDeviceTokenHex,
-            notificationsEnabled: notificationsEnabled,
-            newReleasesEnabled: newReleasesEnabled,
-            dailyRecommendationsEnabled: dailyRecommendationsEnabled
-        )
-    }
-
-    public func handleSignOut(previousUser: LivriaUserProfile?) async {
+    public func clearCachedUserCredentialsOnly() {
         defaults.removeObject(forKey: cachedUserIdKey)
         defaults.removeObject(forKey: cachedEmailKey)
         defaults.removeObject(forKey: cachedCidKey)
+    }
+
+    /// Efface immédiatement les identifiants du background poll et toutes les notifications locales en attente ou affichées.
+    public func clearCachedUserStateAndNotificationsImmediately() {
+        clearCachedUserCredentialsOnly()
+        defaults.removeObject(forKey: pendingDeepLinkKey)
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+    }
+
+    public func syncDeviceRegistration(user: LivriaUserProfile? = nil, isExplicitLogin: Bool = false) async {
+        if let user, user.isGuestAccount {
+            clearCachedUserCredentialsOnly()
+            return
+        }
+
+        let targetUid = user?.id ?? resolvedUserId
+        let targetEmail = (user?.email ?? resolvedEmail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetCid = user?.cid ?? resolvedCid
+        let targetDisplayName = user?.displayName ?? attachedStore?.currentUser?.displayName
+
+        guard let uid = targetUid, uid > 0,
+              !targetEmail.isEmpty,
+              !targetEmail.lowercased().hasSuffix("@guest.livria.store") else {
+            clearCachedUserCredentialsOnly()
+            return
+        }
+
+        // Si l'utilisateur change de compte sur cet iPhone, purge immédiatement les notifications de l'ancien compte
+        let previousCachedEmail = (defaults.string(forKey: cachedEmailKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !previousCachedEmail.isEmpty && previousCachedEmail.lowercased() != targetEmail.lowercased() {
+            let center = UNUserNotificationCenter.current()
+            center.removeAllPendingNotificationRequests()
+            center.removeAllDeliveredNotifications()
+            defaults.removeObject(forKey: seenNotificationIdsKey)
+        }
+
+        defaults.set(uid, forKey: cachedUserIdKey)
+        defaults.set(targetEmail, forKey: cachedEmailKey)
+        if let targetCid, !targetCid.isEmpty {
+            defaults.set(targetCid, forKey: cachedCidKey)
+        }
+
+        let sessionRevoked = await LivriaAPIClient.shared.registerPushDevice(
+            userId: uid,
+            email: targetEmail,
+            cid: targetCid,
+            displayName: targetDisplayName,
+            apnsToken: apnsDeviceTokenHex,
+            notificationsEnabled: notificationsEnabled,
+            newReleasesEnabled: newReleasesEnabled,
+            dailyRecommendationsEnabled: dailyRecommendationsEnabled,
+            isExplicitLogin: isExplicitLogin
+        )
+
+        if sessionRevoked && !isExplicitLogin {
+            await executeRemoteSessionRevocation()
+        }
+    }
+
+    public func handleSignOut(previousUser: LivriaUserProfile?) async {
+        await handleSignOut(
+            userId: previousUser?.id,
+            email: previousUser?.email,
+            cid: previousUser?.cid
+        )
+    }
+
+    public func handleSignOut(userId: Int?, email: String?, cid: String?) async {
+        clearCachedUserStateAndNotificationsImmediately()
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
         await LivriaAPIClient.shared.unregisterPushDevice(
-            userId: previousUser?.id,
-            email: previousUser?.email
+            userId: userId,
+            email: email,
+            cid: cid
         )
+    }
+
+    public func executeRemoteSessionRevocation() async {
+        clearCachedUserStateAndNotificationsImmediately()
+        try? await UNUserNotificationCenter.current().setBadgeCount(0)
+        if let store = attachedStore {
+            store.handleRemoteSessionRevocation()
+        } else {
+            defaults.removeObject(forKey: "livria.store.ios.vipleLiveEmail")
+            defaults.removeObject(forKey: "livria.store.ios.vipleLiveUserId")
+            UserDefaults(suiteName: "group.store.livria.shared")?.removeObject(forKey: "viple.crossapp.store.account")
+        }
     }
 
     // MARK: - 3. Cycle de Vie Scène, Boucle Premier Plan & Fenêtre Arrière-Plan
@@ -518,18 +605,36 @@ public final class LivriaNotificationManager: NSObject, ObservableObject, UNUser
     @discardableResult
     public func performNotificationPollCycle(isBackground: Bool) async -> Bool {
         guard !isPollInFlight else { return false }
+        guard let pollUid = resolvedUserId, pollUid > 0,
+              let pollEmail = resolvedEmail, !pollEmail.isEmpty,
+              !pollEmail.lowercased().hasSuffix("@guest.livria.store") else {
+            return false
+        }
+        let pollCid = resolvedCid
+
         isPollInFlight = true
         defer { isPollInFlight = false }
 
         do {
             let poll = try await LivriaAPIClient.shared.pollNotifications(
-                userId: resolvedUserId,
-                email: resolvedEmail,
-                cid: resolvedCid,
+                userId: pollUid,
+                email: pollEmail,
+                cid: pollCid,
                 limit: 25,
                 fastBackground: isBackground
             )
             self.lastSyncDate = Date()
+
+            if poll.sessionRevoked {
+                await executeRemoteSessionRevocation()
+                return false
+            }
+
+            // Vérifie que l'utilisateur ne s'est pas déconnecté ou n'a pas changé de compte pendant la requête réseau
+            guard let activeEmail = resolvedEmail,
+                  activeEmail.lowercased() == pollEmail.lowercased() else {
+                return false
+            }
 
             if let store = attachedStore {
                 store.notificationInbox = poll.recent
@@ -542,8 +647,8 @@ public final class LivriaNotificationManager: NSObject, ObservableObject, UNUser
                 if !poll.unseen.isEmpty {
                     await LivriaAPIClient.shared.ackNotifications(
                         notificationIds: poll.unseen.map(\.id),
-                        userId: resolvedUserId,
-                        email: resolvedEmail
+                        userId: pollUid,
+                        email: pollEmail
                     )
                 }
                 return true
@@ -579,8 +684,8 @@ public final class LivriaNotificationManager: NSObject, ObservableObject, UNUser
             if !deliveredIds.isEmpty {
                 await LivriaAPIClient.shared.ackNotifications(
                     notificationIds: deliveredIds,
-                    userId: resolvedUserId,
-                    email: resolvedEmail
+                    userId: pollUid,
+                    email: pollEmail
                 )
             }
 
@@ -661,6 +766,11 @@ public final class LivriaNotificationManager: NSObject, ObservableObject, UNUser
     ) async -> UNNotificationPresentationOptions {
         let notifId = (notification.request.content.userInfo["notificationId"] as? String) ?? ""
         return await MainActor.run {
+            guard let activeEmail = self.resolvedEmail,
+                  !activeEmail.isEmpty,
+                  !activeEmail.lowercased().hasSuffix("@guest.livria.store") else {
+                return []
+            }
             if !notifId.isEmpty {
                 self.markNotificationSeenAndAck(notifId)
             }

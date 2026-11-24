@@ -1,5 +1,8 @@
 import Foundation
 import Security
+#if canImport(Darwin)
+import Darwin
+#endif
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -33,8 +36,12 @@ public final class LivriaAPIClient {
         self.decoder = JSONDecoder()
     }
 
+    public static let clientMarketingVersion = "2611.23"
+    private static let sharedSuiteName = "group.com.viplenetwork.shared"
+    private static let sharedPhysicalDeviceIdKey = "cenelis.shared.physicalDeviceId.v1"
+
     public var resolvedDeviceIdentifier: String {
-        let sharedSuite = UserDefaults(suiteName: "group.com.viplenetwork.shared")
+        let sharedSuite = UserDefaults(suiteName: Self.sharedSuiteName)
         #if canImport(UIKit)
         if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
             sharedSuite?.set(vendorId, forKey: "viple.shared.deviceId")
@@ -54,22 +61,145 @@ public final class LivriaAPIClient {
         return generated
     }
 
+    public var resolvedPhysicalDeviceId: String {
+        let sharedSuite = UserDefaults(suiteName: Self.sharedSuiteName)
+        if let sharedPhys = sharedSuite?.string(forKey: Self.sharedPhysicalDeviceIdKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           sharedPhys.count >= 6 {
+            return sharedPhys
+        }
+        if let localPhys = UserDefaults.standard.string(forKey: Self.sharedPhysicalDeviceIdKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           localPhys.count >= 6 {
+            sharedSuite?.set(localPhys, forKey: Self.sharedPhysicalDeviceIdKey)
+            return localPhys
+        }
+        let initial = resolvedDeviceIdentifier
+        if !initial.isEmpty {
+            sharedSuite?.set(initial, forKey: Self.sharedPhysicalDeviceIdKey)
+            UserDefaults.standard.set(initial, forKey: Self.sharedPhysicalDeviceIdKey)
+        }
+        return initial
+    }
+
+    public nonisolated static var hardwareMachineCode: String {
+        var sysInfo = utsname()
+        uname(&sysInfo)
+        let machineMirror = Mirror(reflecting: sysInfo.machine)
+        let rawCode = machineMirror.children.reduce(into: "") { acc, elem in
+            guard let v = elem.value as? Int8, v != 0 else { return }
+            acc.append(Character(UnicodeScalar(UInt8(bitPattern: v))))
+        }.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if rawCode == "arm64" || rawCode == "x86_64" || rawCode == "i386" {
+            if let simId = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !simId.isEmpty {
+                return simId
+            }
+        }
+        return rawCode.isEmpty ? "iPhone" : rawCode
+    }
+
+    public nonisolated static func readableHardwareModelName(for code: String) -> String {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch trimmed {
+        case "arm64", "x86_64", "i386": return "Simulateur iOS (Mac)"
+        case "iPhone10,1", "iPhone10,4": return "iPhone 8"
+        case "iPhone10,2", "iPhone10,5": return "iPhone 8 Plus"
+        case "iPhone10,3", "iPhone10,6": return "iPhone X"
+        case "iPhone11,2": return "iPhone XS"
+        case "iPhone11,4", "iPhone11,6": return "iPhone XS Max"
+        case "iPhone11,8": return "iPhone XR"
+        case "iPhone12,1": return "iPhone 11"
+        case "iPhone12,3": return "iPhone 11 Pro"
+        case "iPhone12,5": return "iPhone 11 Pro Max"
+        case "iPhone12,8": return "iPhone SE (2e gén.)"
+        case "iPhone13,1": return "iPhone 12 mini"
+        case "iPhone13,2": return "iPhone 12"
+        case "iPhone13,3": return "iPhone 12 Pro"
+        case "iPhone13,4": return "iPhone 12 Pro Max"
+        case "iPhone14,2": return "iPhone 13 Pro"
+        case "iPhone14,3": return "iPhone 13 Pro Max"
+        case "iPhone14,4": return "iPhone 13 mini"
+        case "iPhone14,5": return "iPhone 13"
+        case "iPhone14,6": return "iPhone SE (3e gén.)"
+        case "iPhone14,7": return "iPhone 14"
+        case "iPhone14,8": return "iPhone 14 Plus"
+        case "iPhone15,2": return "iPhone 14 Pro"
+        case "iPhone15,3": return "iPhone 14 Pro Max"
+        case "iPhone15,4": return "iPhone 15"
+        case "iPhone15,5": return "iPhone 15 Plus"
+        case "iPhone16,1": return "iPhone 15 Pro"
+        case "iPhone16,2": return "iPhone 15 Pro Max"
+        case "iPhone17,1": return "iPhone 16 Pro"
+        case "iPhone17,2": return "iPhone 16 Pro Max"
+        case "iPhone17,3": return "iPhone 16"
+        case "iPhone17,4": return "iPhone 16 Plus"
+        case "iPhone17,5": return "iPhone 16e"
+        case "iPhone18,1": return "iPhone 17 Pro"
+        case "iPhone18,2": return "iPhone 17 Pro Max"
+        case "iPhone18,3": return "iPhone 17"
+        case "iPhone18,4": return "iPhone 17 Air"
+        default:
+            if trimmed.hasPrefix("iPhone19,") { return "iPhone 18 Series" }
+            if trimmed.hasPrefix("iPad16,") { return "iPad Pro / Air (M4)" }
+            if trimmed.hasPrefix("iPad14,") { return "iPad Pro / Air (M2)" }
+            if trimmed.hasPrefix("iPad13,") { return "iPad Air / Pro (M1)" }
+            if trimmed.hasPrefix("iPad") { return "Apple iPad (\(trimmed))" }
+            if trimmed.hasPrefix("iPhone") { return "Apple \(trimmed)" }
+            return "Apple iPhone"
+        }
+    }
+
+    public var resolvedHardwareModelCode: String {
+        Self.hardwareMachineCode
+    }
+
+    public var resolvedHardwareModelName: String {
+        Self.readableHardwareModelName(for: Self.hardwareMachineCode)
+    }
+
+    public var resolvedOsVersion: String {
+        #if canImport(UIKit)
+        return "iOS \(UIDevice.current.systemVersion)"
+        #else
+        return "iOS 18.0"
+        #endif
+    }
+
     private func applyVipleDeviceHeaders(to req: inout URLRequest) {
         req.setValue("Livria Store", forHTTPHeaderField: "X-Viple-App-Name")
-        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
+        req.setValue(Self.clientMarketingVersion, forHTTPHeaderField: "X-Viple-Client-Version")
         req.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "X-Viple-Request-Id")
         if req.httpMethod == "POST" {
             req.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "X-Idempotency-Key")
         }
         let devId = resolvedDeviceIdentifier
+        let physId = resolvedPhysicalDeviceId
+        let hwCode = resolvedHardwareModelCode
+        let hwName = resolvedHardwareModelName
+        let osVer = resolvedOsVersion
+
         if !devId.isEmpty {
             req.setValue(devId, forHTTPHeaderField: "X-Viple-Vendor-Id")
             req.setValue(devId, forHTTPHeaderField: "X-Viple-Device-Id")
         }
+        if !physId.isEmpty {
+            req.setValue(physId, forHTTPHeaderField: "X-Viple-Physical-Device-Id")
+        }
+        if !hwCode.isEmpty {
+            req.setValue(hwCode, forHTTPHeaderField: "X-Viple-Hardware-Model")
+        }
+        if !hwName.isEmpty {
+            req.setValue(hwName, forHTTPHeaderField: "X-Viple-Model-Name")
+        }
+        if !osVer.isEmpty {
+            req.setValue(osVer, forHTTPHeaderField: "X-Viple-OS-Version")
+        }
         #if canImport(UIKit)
-        let dev = UIDevice.current
         let bounds = UIScreen.main.bounds
-        let deviceSignature = "\(dev.model)|\(dev.systemName)-\(dev.systemVersion)|\(Int(bounds.width))x\(Int(bounds.height))"
+        let deviceSignature = "\(hwName); \(osVer); \(hwCode); \(Int(bounds.width))x\(Int(bounds.height))"
         req.setValue(deviceSignature, forHTTPHeaderField: "X-Viple-Device-Info")
         #endif
     }
@@ -651,17 +781,27 @@ public final class LivriaAPIClient {
         return try await getJSON("/new-releases", queryItems: items)
     }
 
+    @discardableResult
     public func registerPushDevice(
         userId: Int?,
         email: String?,
         cid: String?,
+        displayName: String? = nil,
         apnsToken: String?,
         notificationsEnabled: Bool = true,
         newReleasesEnabled: Bool = true,
-        dailyRecommendationsEnabled: Bool = true
-    ) async {
+        dailyRecommendationsEnabled: Bool = true,
+        isExplicitLogin: Bool = false
+    ) async -> Bool {
         let devId = resolvedDeviceIdentifier
-        guard !devId.isEmpty else { return }
+        let physId = resolvedPhysicalDeviceId
+        guard !devId.isEmpty else { return false }
+        let cleanEmail = (email ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let userId, userId > 0,
+              !cleanEmail.isEmpty,
+              !cleanEmail.lowercased().hasSuffix("@guest.livria.store") else {
+            return false
+        }
         #if DEBUG
         let apnsEnv = "sandbox"
         #else
@@ -670,31 +810,86 @@ public final class LivriaAPIClient {
         var payload: [String: Any] = [
             "deviceId": devId,
             "vendorId": devId,
+            "physicalDeviceId": physId,
+            "userId": userId,
+            "email": cleanEmail,
+            "deviceModelCode": resolvedHardwareModelCode,
+            "deviceModelName": resolvedHardwareModelName,
+            "osVersion": resolvedOsVersion,
             "apnsToken": apnsToken ?? "",
             "apnsEnvironment": apnsEnv,
             "appleTeamId": Self.detectAppleTeamIdFromKeychain(),
             "platform": "iOS",
-            "appVersion": "2611.22",
+            "appVersion": Self.clientMarketingVersion,
             "notificationsEnabled": notificationsEnabled,
             "newReleasesEnabled": newReleasesEnabled,
-            "dailyRecommendationsEnabled": dailyRecommendationsEnabled
+            "dailyRecommendationsEnabled": dailyRecommendationsEnabled,
+            "isExplicitLoginOrRegister": isExplicitLogin
+        ]
+        if let cid, !cid.isEmpty { payload["cid"] = cid }
+        if let displayName, !displayName.isEmpty { payload["displayName"] = displayName }
+        if let res = try? await postRaw("/devices/register", body: payload),
+           let revoked = res["sessionRevoked"] as? Bool {
+            return revoked
+        }
+        return false
+    }
+
+    public func unregisterPushDevice(userId: Int?, email: String?, cid: String? = nil) async {
+        let devId = resolvedDeviceIdentifier
+        let physId = resolvedPhysicalDeviceId
+        guard !devId.isEmpty else { return }
+        var payload: [String: Any] = [
+            "deviceId": devId,
+            "vendorId": devId,
+            "physicalDeviceId": physId
         ]
         if let userId, userId > 0 { payload["userId"] = userId }
         if let email, !email.isEmpty { payload["email"] = email }
         if let cid, !cid.isEmpty { payload["cid"] = cid }
-        _ = try? await postRaw("/devices/register", body: payload)
+        _ = try? await postRaw("/devices/unregister", body: payload)
     }
 
-    public func unregisterPushDevice(userId: Int?, email: String?) async {
+    public func fetchConnectedDevices(
+        userId: Int?,
+        email: String?,
+        cid: String?
+    ) async throws -> LivriaConnectedDevicesResponse {
         let devId = resolvedDeviceIdentifier
-        guard !devId.isEmpty else { return }
+        let physId = resolvedPhysicalDeviceId
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "deviceId", value: devId),
+            URLQueryItem(name: "physicalDeviceId", value: physId)
+        ]
+        if let userId, userId > 0 {
+            items.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.isEmpty {
+            items.append(URLQueryItem(name: "email", value: email))
+        }
+        if let cid, !cid.isEmpty {
+            items.append(URLQueryItem(name: "cid", value: cid))
+        }
+        return try await getJSON("/devices/sessions", queryItems: items)
+    }
+
+    public func revokeConnectedDevice(
+        userId: Int?,
+        email: String?,
+        cid: String?,
+        targetDeviceId: String,
+        rawDeviceIds: [String] = [],
+        targetAppId: String? = "*"
+    ) async throws -> LivriaRevokeDeviceResponse {
         var payload: [String: Any] = [
-            "deviceId": devId,
-            "vendorId": devId
+            "targetDeviceId": targetDeviceId,
+            "rawDeviceIds": rawDeviceIds,
+            "targetAppId": (targetAppId?.isEmpty == false) ? targetAppId! : "*"
         ]
         if let userId, userId > 0 { payload["userId"] = userId }
         if let email, !email.isEmpty { payload["email"] = email }
-        _ = try? await postRaw("/devices/unregister", body: payload)
+        if let cid, !cid.isEmpty { payload["cid"] = cid }
+        return try await postJSON("/devices/revoke", body: payload)
     }
 
     public func pollNotifications(
@@ -705,8 +900,10 @@ public final class LivriaAPIClient {
         fastBackground: Bool = false
     ) async throws -> LivriaNotificationPollResponse {
         let devId = resolvedDeviceIdentifier
+        let physId = resolvedPhysicalDeviceId
         var items: [URLQueryItem] = [
             URLQueryItem(name: "deviceId", value: devId),
+            URLQueryItem(name: "physicalDeviceId", value: physId),
             URLQueryItem(name: "limit", value: String(limit))
         ]
         if let userId, userId > 0 {
@@ -729,7 +926,7 @@ public final class LivriaAPIClient {
             req.httpMethod = "GET"
             req.timeoutInterval = 7.0
             req.setValue("application/json", forHTTPHeaderField: "Accept")
-            req.setValue("LivriaStore-iOS/2611.22 (AppID/\(LivriaAppConfig.appleAppId); BackgroundFetch)", forHTTPHeaderField: "User-Agent")
+            req.setValue("LivriaStore-iOS/\(Self.clientMarketingVersion) (AppID/\(LivriaAppConfig.appleAppId); BackgroundFetch)", forHTTPHeaderField: "User-Agent")
             applyVipleDeviceHeaders(to: &req)
             let (data, response) = try await backgroundPollSession.data(for: req)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {

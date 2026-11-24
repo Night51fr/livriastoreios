@@ -93,6 +93,11 @@ public final class LivriaStoreViewModel: ObservableObject {
     @Published public var userPreferences: LivriaUserPreferences = LivriaUserPreferences()
     @Published public var lastDiagnosticsPing: LivriaDiagnosticsPingResponse? = nil
 
+    // Hub Central des Appareils Connectés Viple Live ID
+    @Published public var connectedDevices: [LivriaConnectedDevice] = []
+    @Published public var isLoadingConnectedDevices: Bool = false
+    private var isExecutingSignOut: Bool = false
+
     private var lastTelemetryFingerprint: String = ""
     private var lastTelemetrySentAt: Date = .distantPast
 
@@ -373,6 +378,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Connecté avec votre compte Viple Live ID (\(user.displayName))")
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription
@@ -415,6 +421,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Bienvenue sur Livria Store, \(user.displayName) ! Compte Viple Live ID créé.")
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription
@@ -461,6 +468,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Connecté avec Apple sur votre compte Viple Live ID (\(user.displayName))")
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription
@@ -500,6 +508,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Bienvenue \(user.displayName) ! Votre identifiant \(user.email) est associé à votre compte Apple.")
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription
@@ -535,6 +544,7 @@ public final class LivriaStoreViewModel: ObservableObject {
             defaults.removeObject(forKey: savedGuestEmailKey)
             isShowingAuthSheet = false
             showToast("Votre compte Viple Live ID (\(user.displayName)) est désormais associé à votre compte Apple !")
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription
@@ -546,26 +556,37 @@ public final class LivriaStoreViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
+            let capturedUid = u.id
+            let capturedEmail = u.email
+            let capturedCid = u.cid
             let res = try await LivriaAPIClient.shared.deleteVipleAccount(
-                userId: u.id,
-                email: u.email,
-                cid: u.cid
+                userId: capturedUid,
+                email: capturedEmail,
+                cid: capturedCid
             )
             let msg = (res["message"] as? String) ?? "Votre compte Viple Live ID a été définitivement supprimé."
+            LivriaNotificationManager.shared.clearCachedUserStateAndNotificationsImmediately()
             defaults.removeObject(forKey: savedEmailKey)
             defaults.removeObject(forKey: savedUserIdKey)
             defaults.removeObject(forKey: savedGuestEmailKey)
             clearLocalCrossAppSession()
-            let previousUser = currentUser
             let freshGuest = getOrCreateGuestEmail()
             isAuthenticated = false
             currentUser = nil
+            notificationInbox = []
+            connectedDevices = []
             shelf = []
             cart = []
             orders = []
+            supportTickets = []
+            userShipments = []
             selectedMainTab = 0
             showToast(msg)
-            await LivriaNotificationManager.shared.handleSignOut(previousUser: previousUser)
+            await LivriaNotificationManager.shared.handleSignOut(
+                userId: capturedUid,
+                email: capturedEmail,
+                cid: capturedCid
+            )
             await LivriaAPIClient.shared.clearCrossAppSession()
             await refreshBootstrap(email: freshGuest, userId: nil)
         } catch {
@@ -573,8 +594,35 @@ public final class LivriaStoreViewModel: ObservableObject {
         }
     }
 
-    public func signOut() {
-        let previousUser = currentUser
+    public func signOut(customToast: String? = nil) {
+        guard !isExecutingSignOut else { return }
+        isExecutingSignOut = true
+
+        // 1. Capture email / userId / cid AVANT de réinitialiser l'état local
+        let cachedNotif = LivriaNotificationManager.shared.cachedAccountSnapshot
+        let capturedUserId: Int? = {
+            if let u = currentUser, !u.isGuestAccount, u.id > 0 { return u.id }
+            let saved = defaults.integer(forKey: savedUserIdKey)
+            if saved > 0 { return saved }
+            return cachedNotif.userId
+        }()
+        let capturedEmail: String? = {
+            if let u = currentUser, !u.isGuestAccount, !u.email.isEmpty { return u.email }
+            if let saved = defaults.string(forKey: savedEmailKey),
+               !saved.isEmpty,
+               !saved.lowercased().hasSuffix("@guest.livria.store") {
+                return saved
+            }
+            return cachedNotif.email
+        }()
+        let capturedCid: String? = {
+            if let u = currentUser, !u.isGuestAccount, !u.cid.isEmpty { return u.cid }
+            return cachedNotif.cid
+        }()
+
+        // 2. Efface immédiatement les infos utilisateur du background poll et supprime toutes les notifications locales
+        LivriaNotificationManager.shared.clearCachedUserStateAndNotificationsImmediately()
+
         defaults.removeObject(forKey: savedEmailKey)
         defaults.removeObject(forKey: savedUserIdKey)
         defaults.removeObject(forKey: savedGuestEmailKey)
@@ -582,13 +630,104 @@ public final class LivriaStoreViewModel: ObservableObject {
         let guestEmail = getOrCreateGuestEmail()
         isAuthenticated = false
         currentUser = nil
+        notificationInbox = []
+        connectedDevices = []
+        shelf = []
         cart = []
         orders = []
-        showToast("Vous naviguez désormais en mode Invité sur Livria Store.")
+        supportTickets = []
+        userShipments = []
+        showToast(customToast ?? "Vous naviguez désormais en mode Invité sur Livria Store.")
+
         Task {
-            await LivriaNotificationManager.shared.handleSignOut(previousUser: previousUser)
+            defer { self.isExecutingSignOut = false }
+            await LivriaNotificationManager.shared.handleSignOut(
+                userId: capturedUserId,
+                email: capturedEmail,
+                cid: capturedCid
+            )
             await LivriaAPIClient.shared.clearCrossAppSession()
             await refreshBootstrap(email: guestEmail, userId: nil)
+        }
+    }
+
+    public func handleRemoteSessionRevocation() {
+        let hasSavedAccount = {
+            if let em = defaults.string(forKey: savedEmailKey),
+               !em.isEmpty,
+               !em.lowercased().hasSuffix("@guest.livria.store") {
+                return true
+            }
+            return !isGuestSession
+        }()
+        guard hasSavedAccount else {
+            LivriaNotificationManager.shared.clearCachedUserStateAndNotificationsImmediately()
+            return
+        }
+        signOut(customToast: "Cet appareil a été déconnecté à distance depuis vos appareils Viple Live ID.")
+    }
+
+    // MARK: - 1a. Gestionnaire Centralisé des Appareils Connectés Viple Live ID
+
+    public func loadConnectedDevices() async {
+        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else {
+            connectedDevices = []
+            return
+        }
+        isLoadingConnectedDevices = true
+        defer { isLoadingConnectedDevices = false }
+        do {
+            let res = try await LivriaAPIClient.shared.fetchConnectedDevices(
+                userId: user.id,
+                email: user.email,
+                cid: user.cid
+            )
+            if res.sessionRevoked {
+                handleRemoteSessionRevocation()
+                return
+            }
+            self.connectedDevices = res.devices
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
+    @discardableResult
+    public func revokeConnectedDevice(
+        device: LivriaConnectedDevice,
+        targetAppId: String = "*"
+    ) async -> Bool {
+        guard isAuthenticated, let user = currentUser, !user.isGuestAccount else { return false }
+        let normalizedTargetApp = targetAppId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "*"
+            : targetAppId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let affectsCurrentAppOnThisDevice = device.isCurrentDevice &&
+            (normalizedTargetApp == "*" || normalizedTargetApp.lowercased() == "livria-store")
+
+        do {
+            let res = try await LivriaAPIClient.shared.revokeConnectedDevice(
+                userId: user.id,
+                email: user.email,
+                cid: user.cid,
+                targetDeviceId: device.deviceId,
+                rawDeviceIds: device.rawDeviceIds,
+                targetAppId: normalizedTargetApp
+            )
+            if affectsCurrentAppOnThisDevice || res.currentDeviceRevoked {
+                signOut(customToast: "Cet appareil a été déconnecté de Livria Store.")
+                return true
+            }
+            if normalizedTargetApp == "*" {
+                showToast("\(device.displayModelName) a été déconnecté de tout l'écosystème Viple.")
+            } else {
+                let appLabel = LivriaConnectedAppBadge.defaultDisplayName(for: normalizedTargetApp)
+                showToast("\(device.displayModelName) a été déconnecté de \(appLabel).")
+            }
+            await loadConnectedDevices()
+            return res.ok
+        } catch {
+            showToast(error.localizedDescription)
+            return false
         }
     }
 
@@ -680,6 +819,7 @@ public final class LivriaStoreViewModel: ObservableObject {
                 self.isShowingAuthSheet = false
             }
             showToast("Connecté automatiquement à \(user.displayName) depuis \(account.sourceApp) ✨")
+            await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             showToast(error.localizedDescription)
@@ -706,6 +846,11 @@ public final class LivriaStoreViewModel: ObservableObject {
 
         do {
             let boot = try await LivriaAPIClient.shared.fetchBootstrap(email: activeEmail, userId: (activeUid ?? 0) > 0 ? activeUid : nil)
+            if boot.sessionRevoked == true && !boot.user.isGuestAccount {
+                self.isServerUnreachable = false
+                handleRemoteSessionRevocation()
+                return
+            }
             var incomingUser = boot.user
             let localSavedTheme = defaults.string(forKey: savedThemeKey)
             if let localSavedTheme, !localSavedTheme.isEmpty {
@@ -755,7 +900,11 @@ public final class LivriaStoreViewModel: ObservableObject {
             self.isServerUnreachable = false
 
             await loadDailyNewReleases()
-            await LivriaNotificationManager.shared.syncDeviceRegistration(user: incomingUser)
+            if !incomingUser.isGuestAccount {
+                await LivriaNotificationManager.shared.syncDeviceRegistration(user: incomingUser, isExplicitLogin: false)
+            } else {
+                LivriaNotificationManager.shared.clearCachedUserCredentialsOnly()
+            }
             if !self.isInitialBootstrapping {
                 consumePendingNavigationAfterBootstrap()
             }
@@ -1020,6 +1169,7 @@ public final class LivriaStoreViewModel: ObservableObject {
                 defaults.set(user.email, forKey: savedEmailKey)
                 defaults.set(user.id, forKey: savedUserIdKey)
                 showToast(res.message ?? "Compte activé et commande rattachée !")
+                await LivriaNotificationManager.shared.syncDeviceRegistration(user: user, isExplicitLogin: true)
                 await refreshBootstrap(email: user.email, userId: user.id)
             }
             return res
